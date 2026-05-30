@@ -1,0 +1,41 @@
+# macOS
+.DS_Store
+
+# 小書蟲：含 API Key 的設定檔
+小書蟲/App/Config.swift
+小書蟲-web/config.js
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+build/
+*.xcworkspace
+!default.xcworkspace
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# Swift Package Manager
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved
+.build/
+
+# CocoaPods / Carthage(如果未來有用到)
+Pods/
+Carthage/Build/
+
+# Python(setup.py 產生的東西)
+__pycache__/
+*.pyc
+
+# 編輯器
+.vscode/
+.idea/
