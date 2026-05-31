@@ -36,6 +36,11 @@
 - 不寫沒人會用到的 feature flag、abstract base class
 - 改 UI 必開瀏覽器看實際效果
 
+## 部署位址（給未來自己看）
+- **PWA 前端**：https://xiaoshuchong.k38513411.workers.dev
+- **Claude proxy Worker**：https://xiaoshuchong-proxy.k38513411.workers.dev
+- **Supabase**：https://psnnezvmmfidrclbqngw.supabase.co
+
 ## 計畫狀態
 目前種子用戶階段，先自己用 + Threads 書帳號 DM 推薦。
 商業化（C 模型：免費 + 付費）等驗證 product-market fit 後再做。
