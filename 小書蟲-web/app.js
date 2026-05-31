@@ -39,6 +39,10 @@ let allBooks = [];
 let currentBook = null;
 let currentNotes = [];
 
+// Supabase 客戶端 + 當前登入使用者
+let sb = null;
+let currentUser = null;
+
 const state = {
   view: 'bookshelf',
   year: new Date().getFullYear(),
@@ -51,6 +55,9 @@ const state = {
   showMilestone: null,
   searchQuery: '',
   showPublicShelf: false,
+  showAuth: false,
+  authMode: 'signin',     // 'signin' | 'signup'
+  authError: '',
 };
 
 // ============================================================
@@ -83,18 +90,351 @@ const wrap = (req) => new Promise((resolve, reject) => {
   req.onerror = () => reject(req.error);
 });
 
-const getAllBooksDB = () => wrap(tx('books').getAll());
-const getBookDB = (id) => wrap(tx('books').get(id));
-const saveBookDB = (book) => wrap(tx('books', 'readwrite').put(book));
-const deleteBookDB = (id) => wrap(tx('books', 'readwrite').delete(id));
-const getNotesForBook = (bookId) => wrap(tx('notes').index('bookId').getAll(bookId));
-const saveNoteDB = (note) => wrap(tx('notes', 'readwrite').put(note));
-const deleteNoteDB = (id) => wrap(tx('notes', 'readwrite').delete(id));
+// 本機 IndexedDB 版(維持原邏輯)
+const _getAllBooksLocal = () => wrap(tx('books').getAll());
+const _getBookLocal = (id) => wrap(tx('books').get(id));
+const _saveBookLocal = (book) => wrap(tx('books', 'readwrite').put(book));
+const _deleteBookLocal = (id) => wrap(tx('books', 'readwrite').delete(id));
+const _getNotesForBookLocal = (bookId) => wrap(tx('notes').index('bookId').getAll(bookId));
+const _saveNoteLocal = (note) => wrap(tx('notes', 'readwrite').put(note));
+const _deleteNoteLocal = (id) => wrap(tx('notes', 'readwrite').delete(id));
+
+// 快取(雲端模式避免每次 render 都 hit 網路)
+let _cloudBooksCache = null;
+let _cloudCacheUserId = null;
+function invalidateBooksCache() {
+  _cloudBooksCache = null;
+}
+
+// 自動切換：登入 → 雲端，登出 → 本機
+async function getAllBooksDB() {
+  if (currentUser && sb) {
+    if (_cloudBooksCache && _cloudCacheUserId === currentUser.id) {
+      return _cloudBooksCache;
+    }
+    _cloudBooksCache = await getAllBooksCloud();
+    _cloudCacheUserId = currentUser.id;
+    return _cloudBooksCache;
+  }
+  return _getAllBooksLocal();
+}
+async function getBookDB(id) {
+  return (currentUser && sb) ? getBookCloud(id) : _getBookLocal(id);
+}
+async function saveBookDB(book) {
+  if (currentUser && sb) {
+    await saveBookCloud(book);
+    invalidateBooksCache();
+    return;
+  }
+  return _saveBookLocal(book);
+}
+async function deleteBookDB(id) {
+  if (currentUser && sb) {
+    await deleteBookCloud(id);
+    invalidateBooksCache();
+    return;
+  }
+  return _deleteBookLocal(id);
+}
+async function getNotesForBook(bookId) {
+  return (currentUser && sb) ? getNotesForBookCloud(bookId) : _getNotesForBookLocal(bookId);
+}
+async function saveNoteDB(note) {
+  if (currentUser && sb) return saveNoteCloud(note);
+  return _saveNoteLocal(note);
+}
+async function deleteNoteDB(id) {
+  if (currentUser && sb) return deleteNoteCloud(id);
+  return _deleteNoteLocal(id);
+}
 
 async function deleteBookAndNotes(id) {
   const notes = await getNotesForBook(id);
   await Promise.all(notes.map(n => deleteNoteDB(n.id)));
   await deleteBookDB(id);
+}
+
+// ============================================================
+// Supabase 客戶端 + 登入狀態
+// ============================================================
+function initSupabase() {
+  if (!window.CONFIG.SUPABASE_URL || !window.CONFIG.SUPABASE_ANON_KEY) return;
+  if (!window.supabase || !window.supabase.createClient) {
+    console.warn('Supabase SDK 還沒載入');
+    return;
+  }
+  sb = window.supabase.createClient(
+    window.CONFIG.SUPABASE_URL,
+    window.CONFIG.SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        storageKey: '小書蟲-auth-v1',
+      },
+    }
+  );
+}
+
+async function initAuth() {
+  if (!sb) return;
+  const { data } = await sb.auth.getSession();
+  currentUser = data.session?.user || null;
+  // 登入狀態改變時(別處登入、登出、token 過期)自動 re-render
+  sb.auth.onAuthStateChange((event, session) => {
+    currentUser = session?.user || null;
+    invalidateBooksCache();
+    render();
+  });
+}
+
+async function signUp(email, password) {
+  if (!sb) throw new Error('Supabase 還沒設定好');
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+async function signIn(email, password) {
+  if (!sb) throw new Error('Supabase 還沒設定好');
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+async function signOut() {
+  if (!sb) return;
+  await sb.auth.signOut();
+  currentUser = null;
+  invalidateBooksCache();
+}
+
+// ============================================================
+// 雲端資料層(Supabase 版,Storage 處理圖片)
+// ============================================================
+
+// 本地書本物件 → DB row
+function bookToRow(book) {
+  return {
+    id: book.id,
+    user_id: currentUser.id,
+    title: book.title,
+    author: book.author || '',
+    publisher: book.publisher || '',
+    category: book.category || '其他',
+    cover_storage_path: book.coverStoragePath || null,
+    cover_url: (book.coverURL && !book.coverStoragePath) ? book.coverURL : null,
+    date_added: book.dateAdded || new Date().toISOString(),
+    is_monthly_pick: !!book.isMonthlyPick,
+    is_yearly_pick: !!book.isYearlyPick,
+    ai_summary: book.aiSummary || '',
+    summary_style: book.summaryStyle || 'bullet',
+    mood_tags: book.moodTags || [],
+    recommend_for: book.recommendFor || '',
+    note_for_card: book.noteForCard || '',
+    quote_for_card: book.quoteForCard || '',
+    reading_context: book.readingContext || '',
+    updated_at: new Date().toISOString(),
+  };
+}
+
+// DB row → 本地書本物件
+function rowToBook(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    author: row.author || '',
+    publisher: row.publisher || '',
+    category: row.category || '其他',
+    coverStoragePath: row.cover_storage_path,
+    coverURL: row.cover_url,
+    coverBlob: null,
+    dateAdded: row.date_added,
+    isMonthlyPick: row.is_monthly_pick,
+    isYearlyPick: row.is_yearly_pick,
+    aiSummary: row.ai_summary || '',
+    summaryStyle: row.summary_style || 'bullet',
+    moodTags: row.mood_tags || [],
+    recommendFor: row.recommend_for || '',
+    noteForCard: row.note_for_card || '',
+    quoteForCard: row.quote_for_card || '',
+    readingContext: row.reading_context || '',
+  };
+}
+
+// 產簽名 URL(有效 1 小時)
+async function getSignedURL(path) {
+  if (!path || !sb) return null;
+  const { data } = await sb.storage.from('book-images').createSignedUrl(path, 3600);
+  return data?.signedUrl || null;
+}
+
+// 上傳封面 → 回傳 storage path
+async function uploadCoverToStorage(blob, bookId) {
+  if (!sb || !currentUser) throw new Error('未登入');
+  const resized = await resizeIfNeeded(blob, 800, 0.85);
+  const path = `${currentUser.id}/covers/${bookId}.jpg`;
+  const { error } = await sb.storage.from('book-images').upload(path, resized, {
+    contentType: 'image/jpeg',
+    upsert: true,
+  });
+  if (error) throw error;
+  return path;
+}
+
+async function uploadNoteToStorage(blob, noteId) {
+  if (!sb || !currentUser) throw new Error('未登入');
+  const resized = await resizeIfNeeded(blob, 1600, 0.8);
+  const path = `${currentUser.id}/notes/${noteId}.jpg`;
+  const { error } = await sb.storage.from('book-images').upload(path, resized, {
+    contentType: 'image/jpeg',
+    upsert: true,
+  });
+  if (error) throw error;
+  return path;
+}
+
+async function getAllBooksCloud() {
+  const { data, error } = await sb
+    .from('books')
+    .select('*')
+    .order('date_added', { ascending: false });
+  if (error) throw error;
+  return Promise.all((data || []).map(async row => {
+    const book = rowToBook(row);
+    if (book.coverStoragePath) {
+      book.coverURL = await getSignedURL(book.coverStoragePath);
+    }
+    return book;
+  }));
+}
+
+async function getBookCloud(id) {
+  const { data, error } = await sb.from('books').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const book = rowToBook(data);
+  if (book.coverStoragePath) {
+    book.coverURL = await getSignedURL(book.coverStoragePath);
+  }
+  return book;
+}
+
+async function saveBookCloud(book) {
+  // 如果有新封面 blob,先上傳 Storage
+  if (book.coverBlob instanceof Blob) {
+    book.coverStoragePath = await uploadCoverToStorage(book.coverBlob, book.id);
+    book.coverBlob = null;
+  }
+  const row = bookToRow(book);
+  const { error } = await sb.from('books').upsert(row);
+  if (error) throw error;
+}
+
+async function deleteBookCloud(id) {
+  // 先抓所有要刪的 Storage 路徑
+  const [bookRes, notesRes] = await Promise.all([
+    sb.from('books').select('cover_storage_path').eq('id', id).maybeSingle(),
+    sb.from('notes').select('image_storage_path').eq('book_id', id),
+  ]);
+  const paths = [];
+  if (bookRes.data?.cover_storage_path) paths.push(bookRes.data.cover_storage_path);
+  (notesRes.data || []).forEach(n => paths.push(n.image_storage_path));
+  if (paths.length) await sb.storage.from('book-images').remove(paths);
+  // 刪 book row(notes 因 cascade 自動跟著刪)
+  const { error } = await sb.from('books').delete().eq('id', id);
+  if (error) throw error;
+}
+
+async function getNotesForBookCloud(bookId) {
+  const { data, error } = await sb
+    .from('notes')
+    .select('*')
+    .eq('book_id', bookId)
+    .order('date_added');
+  if (error) throw error;
+  return Promise.all((data || []).map(async row => ({
+    id: row.id,
+    bookId: row.book_id,
+    imageStoragePath: row.image_storage_path,
+    imageURL: await getSignedURL(row.image_storage_path),
+    imageBlob: null,
+    dateAdded: row.date_added,
+  })));
+}
+
+async function saveNoteCloud(note) {
+  let path = note.imageStoragePath;
+  if (note.imageBlob instanceof Blob) {
+    path = await uploadNoteToStorage(note.imageBlob, note.id);
+    note.imageStoragePath = path;
+    note.imageBlob = null;
+  }
+  const row = {
+    id: note.id,
+    book_id: note.bookId,
+    user_id: currentUser.id,
+    image_storage_path: path,
+    date_added: note.dateAdded || new Date().toISOString(),
+  };
+  const { error } = await sb.from('notes').upsert(row);
+  if (error) throw error;
+}
+
+async function deleteNoteCloud(id) {
+  const { data } = await sb.from('notes').select('image_storage_path').eq('id', id).maybeSingle();
+  if (data?.image_storage_path) {
+    await sb.storage.from('book-images').remove([data.image_storage_path]);
+  }
+  const { error } = await sb.from('notes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// 一鍵把本機 IndexedDB 的書上傳到雲端
+async function migrateLocalToCloud(progressCb) {
+  if (!currentUser || !sb) throw new Error('需要先登入');
+  const localBooks = await _getAllBooksLocal();
+  if (!localBooks.length) return { bookCount: 0, noteCount: 0 };
+
+  let bookCount = 0;
+  let noteCount = 0;
+  let i = 0;
+  for (const localBook of localBooks) {
+    i++;
+    if (progressCb) progressCb(i, localBooks.length, localBook.title);
+
+    // 已存在雲端就跳過(避免重複)
+    const { data: existing } = await sb.from('books').select('id').eq('id', localBook.id).maybeSingle();
+    if (existing) continue;
+
+    const book = withDefaults({ ...localBook });
+    try {
+      await saveBookCloud(book);
+      bookCount++;
+    } catch (e) {
+      console.warn(`上傳《${book.title}》失敗:`, e.message);
+      continue;
+    }
+
+    // 該書的筆記
+    const localNotes = await _getNotesForBookLocal(localBook.id);
+    for (const note of localNotes) {
+      try {
+        await saveNoteCloud({
+          id: note.id,
+          bookId: note.bookId,
+          imageBlob: note.imageBlob,
+          dateAdded: note.dateAdded,
+        });
+        noteCount++;
+      } catch (e) {
+        console.warn(`筆記上傳失敗:`, e.message);
+      }
+    }
+  }
+  invalidateBooksCache();
+  return { bookCount, noteCount };
 }
 
 // 補上舊版書本可能缺的欄位
@@ -182,8 +522,24 @@ function coverDataURL(book) {
   return null;
 }
 
+// 筆記照片 URL(本機 blob 或雲端簽名 URL 都可)
+function noteImageURL(note) {
+  if (note.imageBlob instanceof Blob) return URL.createObjectURL(note.imageBlob);
+  if (note.imageURL) return note.imageURL;
+  return '';
+}
+
 function countChars(s) {
   return [...(s || '')].length;  // 用 spread 處理 emoji 跟中文
+}
+
+// Debounce 工具(避免打字時每個字都打 API)
+function debounce(fn, ms = 600) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), ms);
+  };
 }
 
 // ---------- 顏色工具(給「依封面取色」用) ----------
@@ -1262,6 +1618,10 @@ async function render() {
     root.insertAdjacentHTML('beforeend', renderMilestoneModal());
     attachMilestoneListeners();
   }
+  if (state.showAuth) {
+    root.insertAdjacentHTML('beforeend', renderAuthModal());
+    attachAuthListeners();
+  }
 }
 
 function renderHeader(title, leftHTML = '', rightHTML = '') {
@@ -1311,6 +1671,99 @@ function attachWelcomeListeners() {
     localStorage.setItem(WELCOME_KEY, '1');
     state.showWelcome = false;
     render();
+  });
+}
+
+// ---------- Auth Modal(登入 / 註冊) ----------
+function renderAuthModal() {
+  const isSignup = state.authMode === 'signup';
+  return `<div class="modal-overlay center" id="auth-modal">
+    <div class="welcome-modal" style="max-width: 380px; text-align: left">
+      <h2 style="text-align: center">${isSignup ? '建立帳號' : '登入'}</h2>
+      <p class="muted small" style="margin-bottom: 16px; text-align: center">
+        ${isSignup
+          ? '建好帳號後，資料會自動同步雲端<br>之後 iPhone / Mac 都看得到同一個書架'
+          : '登入後資料會從雲端同步回來'}
+      </p>
+      <label style="margin-bottom: 12px">Email
+        <input type="email" id="auth-email" placeholder="你的 email" autocomplete="email">
+      </label>
+      <label style="margin-bottom: 6px">密碼
+        <input type="password" id="auth-password" placeholder="${isSignup ? '至少 6 個字' : ''}" autocomplete="${isSignup ? 'new-password' : 'current-password'}">
+      </label>
+      ${state.authError ? `<div class="error" style="margin: 6px 0">${escapeHtml(state.authError)}</div>` : ''}
+      <button class="btn primary full" id="auth-submit" style="margin-top: 12px">
+        ${isSignup ? '註冊' : '登入'}
+      </button>
+      <p class="muted small" style="text-align:center; margin-top: 14px">
+        <a href="#" id="auth-toggle" style="color: var(--primary); text-decoration: none">
+          ${isSignup ? '已有帳號 → 登入' : '還沒帳號 → 註冊'}
+        </a>
+      </p>
+      <p class="muted small" style="text-align:center; margin-top: 8px">
+        <a href="#" id="auth-cancel" style="color: var(--muted); text-decoration: none">
+          先不登入，繼續用本機版
+        </a>
+      </p>
+    </div>
+  </div>`;
+}
+
+function attachAuthListeners() {
+  document.getElementById('auth-toggle').addEventListener('click', e => {
+    e.preventDefault();
+    state.authMode = state.authMode === 'signup' ? 'signin' : 'signup';
+    state.authError = '';
+    render();
+  });
+
+  document.getElementById('auth-cancel').addEventListener('click', e => {
+    e.preventDefault();
+    state.showAuth = false;
+    state.authError = '';
+    render();
+  });
+
+  const submitBtn = document.getElementById('auth-submit');
+  const submitFn = async () => {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if (!email || !password) {
+      state.authError = '請填 email 跟密碼';
+      render();
+      return;
+    }
+    if (state.authMode === 'signup' && password.length < 6) {
+      state.authError = '密碼至少要 6 個字';
+      render();
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spin"></span>處理中…';
+    try {
+      if (state.authMode === 'signup') {
+        await signUp(email, password);
+        toast('✅ 註冊成功！');
+      } else {
+        await signIn(email, password);
+        toast('✅ 歡迎回來');
+      }
+      state.showAuth = false;
+      state.authError = '';
+      // currentUser 會由 onAuthStateChange 設定，這裡先同步設一下避免閃爍
+      const { data } = await sb.auth.getSession();
+      currentUser = data.session?.user || null;
+      render();
+    } catch (e) {
+      state.authError = e.message || '失敗，請再試一次';
+      submitBtn.disabled = false;
+      submitBtn.textContent = state.authMode === 'signup' ? '註冊' : '登入';
+      render();
+    }
+  };
+  submitBtn.addEventListener('click', submitFn);
+  document.getElementById('auth-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitFn();
   });
 }
 
@@ -1756,7 +2209,7 @@ function renderDetail() {
       <div class="notes-grid">
         ${sortedNotes.map(n =>
           `<div class="note-cell" data-id="${n.id}">
-            <img src="${URL.createObjectURL(n.imageBlob)}">
+            <img src="${noteImageURL(n)}">
           </div>`
         ).join('')}
         ${currentNotes.length < NOTES_MAX ? `
@@ -1840,16 +2293,19 @@ function attachDetailListeners() {
     });
   });
 
+  // 文字輸入 debounce 1 秒,避免每個字打 API
+  const debouncedSaveBook = debounce(() => saveBookDB(currentBook), 1000);
+
   // 想推薦給誰
-  document.getElementById('d-recommend').addEventListener('input', async e => {
+  document.getElementById('d-recommend').addEventListener('input', e => {
     currentBook.recommendFor = e.target.value;
-    await saveBookDB(currentBook);
+    debouncedSaveBook();
   });
 
   // 讀書當下
-  document.getElementById('d-context').addEventListener('input', async e => {
+  document.getElementById('d-context').addEventListener('input', e => {
     currentBook.readingContext = e.target.value;
-    await saveBookDB(currentBook);
+    debouncedSaveBook();
   });
 
   document.getElementById('d-category').addEventListener('change', async e => {
@@ -1865,20 +2321,20 @@ function attachDetailListeners() {
     });
   });
 
-  // 隨筆隨記、金句
+  // 隨筆隨記、金句(用上面的 debouncedSaveBook)
   const noteInput = document.getElementById('d-note');
   const noteCount = document.getElementById('note-count');
-  noteInput.addEventListener('input', async e => {
+  noteInput.addEventListener('input', e => {
     currentBook.noteForCard = e.target.value;
     noteCount.textContent = `${countChars(e.target.value)} / ${NOTE_FOR_CARD_MAX}`;
-    await saveBookDB(currentBook);
+    debouncedSaveBook();
   });
   const quoteInput = document.getElementById('d-quote');
   const quoteCount = document.getElementById('quote-count');
-  quoteInput.addEventListener('input', async e => {
+  quoteInput.addEventListener('input', e => {
     currentBook.quoteForCard = e.target.value;
     quoteCount.textContent = `${countChars(e.target.value)} / ${QUOTE_MAX}`;
-    await saveBookDB(currentBook);
+    debouncedSaveBook();
   });
 
   const notesInput = document.getElementById('notes-input');
@@ -2050,6 +2506,21 @@ function renderYearly() {
 
       <div class="spacer"></div>
 
+      ${sb ? (currentUser ? `
+        <section class="settings-section" style="background: linear-gradient(135deg, #eaf5e0, #d4e8c0)">
+          <h3>☁️ 雲端同步（已啟用）</h3>
+          <p class="desc">已登入 <strong>${escapeHtml(currentUser.email)}</strong><br>新加的書、筆記、封面圖片都會自動同步到雲端，換裝置登入後就能看到</p>
+          <button class="btn primary full" id="auth-migrate-btn" style="margin-bottom: 8px">📤 把本機既有的書一鍵上傳到雲端</button>
+          <button class="btn outline full" id="auth-signout-btn">登出</button>
+        </section>
+      ` : `
+        <section class="settings-section" style="background: linear-gradient(135deg, #fdf2e2, #f5e6d3)">
+          <h3>☁️ 雲端同步</h3>
+          <p class="desc">登入後資料會自動同步到雲端，iPhone / Mac 看到同一個書架，永遠不會因為清快取或換瀏覽器而消失。</p>
+          <button class="btn primary full" id="auth-show-btn">☁️ 登入啟用同步</button>
+        </section>
+      `) : ''}
+
       <section class="settings-section">
         <h3>🌐 公開書架網頁</h3>
         <p class="desc">把你的書架做成一個獨立網頁，下載 .html 檔丟到 Cloudflare Pages / Vercel / GitHub Pages 任何一個免費空間，分享網址給朋友。朋友不用裝任何 app 就能看你的書架（含心情、隨筆、金句、購書連結）。</p>
@@ -2132,6 +2603,46 @@ function attachYearlyListeners() {
       alert(`匯出失敗：${e.message}`);
     }
   });
+
+  // 雲端同步登入/登出
+  const authShowBtn = document.getElementById('auth-show-btn');
+  if (authShowBtn) {
+    authShowBtn.addEventListener('click', () => {
+      state.showAuth = true;
+      state.authMode = 'signup';
+      state.authError = '';
+      render();
+    });
+  }
+  const authSignoutBtn = document.getElementById('auth-signout-btn');
+  if (authSignoutBtn) {
+    authSignoutBtn.addEventListener('click', async () => {
+      if (!confirm('登出後本機資料還在，但不會再同步雲端。要繼續嗎？')) return;
+      await signOut();
+      toast('已登出');
+      render();
+    });
+  }
+
+  const migrateBtn = document.getElementById('auth-migrate-btn');
+  if (migrateBtn) {
+    migrateBtn.addEventListener('click', async () => {
+      if (!confirm('把本機 IndexedDB 的所有書(含筆記與封面)上傳到雲端。\n已存在雲端的書會自動跳過。要繼續嗎？')) return;
+      migrateBtn.disabled = true;
+      migrateBtn.innerHTML = '<span class="spin"></span>準備中…';
+      try {
+        const result = await migrateLocalToCloud((i, total, title) => {
+          migrateBtn.innerHTML = `<span class="spin"></span>${i}/${total}《${title.slice(0, 12)}…》`;
+        });
+        toast(`✅ 上傳 ${result.bookCount} 本書、${result.noteCount} 張筆記`);
+        render();
+      } catch (e) {
+        alert(`上傳失敗：${e.message}`);
+        migrateBtn.disabled = false;
+        migrateBtn.innerHTML = '📤 把本機既有的書一鍵上傳到雲端';
+      }
+    });
+  }
 
   document.getElementById('export-shelf-btn').addEventListener('click', async () => {
     const btn = document.getElementById('export-shelf-btn');
@@ -2294,6 +2805,8 @@ async function renderSharePreview() {
 (async () => {
   try {
     await openDB();
+    initSupabase();
+    await initAuth();
     if (!localStorage.getItem(WELCOME_KEY)) {
       state.showWelcome = true;
     }

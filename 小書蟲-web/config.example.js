@@ -4,4 +4,9 @@ window.CONFIG = {
   CLAUDE_API_KEY: '',
   CLAUDE_MODEL: 'claude-sonnet-4-6',  // 想省錢可換 'claude-haiku-4-5-20251001'
   GOOGLE_BOOKS_API: 'https://www.googleapis.com/books/v1/volumes',
+
+  // Supabase(可選，要開雲端同步才需要)
+  // 在 supabase.com 建專案後到 Settings → API 找
+  SUPABASE_URL: '',
+  SUPABASE_ANON_KEY: '',
 };

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 淡綠底，自然派 -->
+  <rect width="512" height="512" fill="#e8efd9" rx="96"/>
+  <!-- 書脊（中軸） -->
+  <rect x="246" y="100" width="20" height="312" rx="3" fill="#3d4f2a"/>
+  <!-- 左頁（淺綠葉子） -->
+  <path d="M 246 120
+    Q 100 140 80 280
+    Q 90 396 246 408 Z"
+    fill="#b5cf8a"/>
+  <!-- 左頁主葉脈 -->
+  <path d="M 246 130 Q 175 280 105 380" stroke="#3d4f2a" stroke-width="2.5" opacity="0.5" fill="none"/>
+  <!-- 左頁支葉脈 -->
+  <path d="M 220 170 Q 175 200 140 235" stroke="#3d4f2a" stroke-width="1.5" opacity="0.35" fill="none"/>
+  <path d="M 210 220 Q 165 250 125 290" stroke="#3d4f2a" stroke-width="1.5" opacity="0.35" fill="none"/>
+  <path d="M 200 280 Q 155 305 120 340" stroke="#3d4f2a" stroke-width="1.5" opacity="0.35" fill="none"/>
+  <!-- 右頁（深綠葉子） -->
+  <path d="M 266 120
+    Q 412 140 432 280
+    Q 422 396 266 408 Z"
+    fill="#7d9c5a"/>
+  <!-- 右頁主葉脈 -->
+  <path d="M 266 130 Q 337 280 407 380" stroke="#fdf8f2" stroke-width="2.5" opacity="0.4" fill="none"/>
+  <!-- 右頁支葉脈 -->
+  <path d="M 292 170 Q 337 200 372 235" stroke="#fdf8f2" stroke-width="1.5" opacity="0.3" fill="none"/>
+  <path d="M 302 220 Q 347 250 387 290" stroke="#fdf8f2" stroke-width="1.5" opacity="0.3" fill="none"/>
+  <path d="M 312 280 Q 357 305 392 340" stroke="#fdf8f2" stroke-width="1.5" opacity="0.3" fill="none"/>
+
+  <!-- 小蟲爬過的足跡（從右頁上方蜿蜒到下方） -->
+  <path d="M 295 180
+    Q 325 215 310 250
+    Q 295 285 325 315
+    Q 355 345 340 372"
+    stroke="#fdf8f2"
+    stroke-width="2.5"
+    stroke-dasharray="3 7"
+    fill="none"
+    opacity="0.55"
+    stroke-linecap="round"/>
+
+  <!-- 小蟲（停在路徑終點） -->
+  <g transform="translate(340, 372)">
+    <!-- 身體 -->
+    <ellipse cx="0" cy="0" rx="20" ry="13" fill="#2d3d1c"/>
+    <!-- 高光 -->
+    <ellipse cx="-5" cy="-5" rx="7" ry="3.5" fill="#5a6f3e" opacity="0.7"/>
+    <!-- 左眼 -->
+    <circle cx="-6" cy="-2" r="3.5" fill="#fdf8f2"/>
+    <circle cx="-5" cy="-1" r="1.8" fill="#2d1e10"/>
+    <!-- 右眼 -->
+    <circle cx="6" cy="-2" r="3.5" fill="#fdf8f2"/>
+    <circle cx="7" cy="-1" r="1.8" fill="#2d1e10"/>
+    <!-- 微笑 -->
+    <path d="M -5 6 Q 0 10 5 6" stroke="#fdf8f2" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <!-- 觸角 -->
+    <line x1="-7" y1="-10" x2="-12" y2="-17" stroke="#2d3d1c" stroke-width="2" stroke-linecap="round"/>
+    <line x1="7" y1="-10" x2="12" y2="-17" stroke="#2d3d1c" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="-12" cy="-17" r="2.5" fill="#2d3d1c"/>
+    <circle cx="12" cy="-17" r="2.5" fill="#2d3d1c"/>
+  </g>
+</svg>

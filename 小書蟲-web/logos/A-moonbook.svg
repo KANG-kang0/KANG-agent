@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- 暖棕底，溫文派 -->
+  <rect width="512" height="512" fill="#8b5a3c" rx="96"/>
+  <!-- 上方彎月 -->
+  <path d="M 290 155 a 65 65 0 1 0 0 130 a 48 48 0 1 1 0 -130 z" fill="#fdf8f2"/>
+  <!-- 開卷書（攤平在月光下） -->
+  <g transform="translate(256, 380)">
+    <!-- 投影 -->
+    <ellipse cx="0" cy="50" rx="170" ry="10" fill="#3d2614" opacity="0.25"/>
+    <!-- 左頁 -->
+    <path d="M -158 -25 Q -78 -50 -5 -28 L -5 38 Q -78 14 -158 42 Z" fill="#fdf8f2"/>
+    <!-- 右頁 -->
+    <path d="M 158 -25 Q 78 -50 5 -28 L 5 38 Q 78 14 158 42 Z" fill="#fdf8f2"/>
+    <!-- 書頁紋理 -->
+    <line x1="-130" y1="-12" x2="-30" y2="-25" stroke="#d4a87f" stroke-width="3" stroke-linecap="round"/>
+    <line x1="-130" y1="8" x2="-30" y2="-5" stroke="#d4a87f" stroke-width="3" stroke-linecap="round"/>
+    <line x1="-130" y1="28" x2="-30" y2="15" stroke="#d4a87f" stroke-width="3" stroke-linecap="round"/>
+    <line x1="30" y1="-25" x2="130" y2="-12" stroke="#d4a87f" stroke-width="3" stroke-linecap="round"/>
+    <line x1="30" y1="-5" x2="130" y2="8" stroke="#d4a87f" stroke-width="3" stroke-linecap="round"/>
+    <line x1="30" y1="15" x2="130" y2="28" stroke="#d4a87f" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>
