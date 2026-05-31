@@ -47,6 +47,7 @@ const state = {
   view: 'bookshelf',
   year: new Date().getFullYear(),
   category: '全部',
+  sortBy: 'newest',
   currentBookId: null,
   showAddBook: false,
   showShareCard: false,
@@ -685,8 +686,8 @@ async function ocrCover(blob) {
 
 規則：
 - 書名一定要填(看不清楚就猜最可能的)
-- 作者看不到就用空字串
-- 出版社看不到就用空字串
+- 作者通常在封面下方、上方或角落，字體較小；只要看得到就填入，連譯者也算
+- 出版社通常在書本下緣或書背 logo；看不到就用空字串
 - 不要前後贅言，只回傳 JSON
 - 如果完全不是書封，回傳 {"title": "", "author": "", "publisher": ""}`;
 
@@ -712,17 +713,20 @@ async function ocrCover(blob) {
   }
 }
 
-// 辨識完封面後，背景查 Google Books 補出版社
-async function autoFillPublisher(title, author) {
+// 辨識完封面後，背景查 Google Books 補作者與出版社
+async function autoFillBookInfo(title, author) {
   try {
     const query = author ? `${title} ${author}` : title;
     const results = await searchGoogleBooks(query);
-    if (!results.length) return '';
-    // 找標題吻合且有出版社的
-    const best = results.find(r => r.publisher && (r.title.includes(title) || title.includes(r.title)));
-    return best ? best.publisher : (results[0].publisher || '');
+    if (!results.length) return {};
+    // 優先找標題吻合的
+    const best = results.find(r => r.title.includes(title) || title.includes(r.title)) || results[0];
+    return {
+      author: best.authors && best.authors.length ? best.authors.join(', ') : '',
+      publisher: best.publisher || '',
+    };
   } catch {
-    return '';
+    return {};
   }
 }
 
@@ -808,6 +812,16 @@ function makeCanvas(w, h) {
   return canvas;
 }
 
+// 書脊立體感：封面左側畫一條深→透明漸層，模擬書本厚度
+function drawSpine(ctx, x, y, w, h) {
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, 'rgba(0,0,0,0.42)');
+  grad.addColorStop(0.6, 'rgba(0,0,0,0.14)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, y, w, h);
+}
+
 // 暖棕版型(IG 正方 1080x1080)— 背景色根據封面主色自動調整
 async function drawWarmCard(book) {
   const canvas = makeCanvas(1080, 1080);
@@ -843,17 +857,23 @@ async function drawWarmCard(book) {
 
   const cw = 360, ch = 540;
   const cx = (1080 - cw) / 2, cy = 160;
-  ctx.shadowColor = 'rgba(0,0,0,0.3)';
-  ctx.shadowBlur = 24; ctx.shadowOffsetY = 12;
+  // 柔軟暖色落影
+  ctx.save();
+  ctx.shadowColor = 'rgba(60, 30, 15, 0.45)';
+  ctx.shadowBlur = 50;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 24;
   ctx.fillStyle = '#fff';
   ctx.fillRect(cx, cy, cw, ch);
-  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.restore();
   if (cover) {
     ctx.drawImage(cover, cx, cy, cw, ch);
   } else {
     ctx.fillStyle = '#e0c9a8';
     ctx.fillRect(cx, cy, cw, ch);
   }
+  // 書脊立體感
+  drawSpine(ctx, cx, cy, 14, ch);
 
   ctx.fillStyle = titleColor;
   ctx.font = `bold 52px ${FONT}`;
@@ -944,17 +964,22 @@ async function drawMinimalCard(book) {
   const cover = await getCoverImageForCanvas(book);
   const cw = 300, ch = 450;
   const cx = 90, cy = 200;
-  ctx.shadowColor = 'rgba(0,0,0,0.12)';
-  ctx.shadowBlur = 16; ctx.shadowOffsetY = 8;
+  // 柔軟落影
+  ctx.save();
+  ctx.shadowColor = 'rgba(20, 20, 30, 0.22)';
+  ctx.shadowBlur = 38;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 18;
   ctx.fillStyle = '#fff';
   ctx.fillRect(cx, cy, cw, ch);
-  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.restore();
   if (cover) {
     ctx.drawImage(cover, cx, cy, cw, ch);
   } else {
     ctx.fillStyle = '#ececec';
     ctx.fillRect(cx, cy, cw, ch);
   }
+  drawSpine(ctx, cx, cy, 12, ch);
 
   const tx = cx + cw + 60;
   ctx.fillStyle = '#1a1a1a';
@@ -1014,11 +1039,13 @@ async function drawPolaroidCard(book) {
   ctx.rotate(-0.035);
 
   const fw = 560, fh = 720;
-  ctx.shadowColor = 'rgba(0,0,0,0.3)';
-  ctx.shadowBlur = 30; ctx.shadowOffsetY = 16;
+  ctx.shadowColor = 'rgba(40, 25, 15, 0.42)';
+  ctx.shadowBlur = 48;
+  ctx.shadowOffsetX = 6;
+  ctx.shadowOffsetY = 24;
   ctx.fillStyle = '#fff';
   ctx.fillRect(-fw / 2, -fh / 2, fw, fh);
-  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
   const cover = await getCoverImageForCanvas(book);
   const inw = 480, inh = 520;
@@ -1030,6 +1057,7 @@ async function drawPolaroidCard(book) {
     ctx.fillStyle = '#e8dccb';
     ctx.fillRect(inx, iny, inw, inh);
   }
+  drawSpine(ctx, inx, iny, 12, inh);
 
   ctx.fillStyle = '#3d2614';
   ctx.font = `500 30px ${FONT}`;
@@ -1096,6 +1124,22 @@ async function drawQuoteCard(book) {
   ctx.font = `300 280px Georgia, serif`;
   ctx.textAlign = 'right';
   ctx.fillText('”', 1000, 820);
+
+  // 右上角小封面（看到金句就知道是哪本書）
+  const cover = await getCoverImageForCanvas(book);
+  if (cover) {
+    const ccw = 110, cch = 165;
+    const ccx = 1080 - ccw - 70, ccy = 80;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 10;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(ccx, ccy, ccw, cch);
+    ctx.restore();
+    ctx.drawImage(cover, ccx, ccy, ccw, cch);
+    drawSpine(ctx, ccx, ccy, 7, cch);
+  }
 
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.font = `28px ${FONT}`;
@@ -1232,8 +1276,8 @@ async function shareBlob(blob, filename, title) {
 // ============================================================
 // 購買連結
 // ============================================================
-function buyLinks(title, author) {
-  const q = encodeURIComponent(`${title} ${author || ''}`.trim());
+function buyLinks(title) {
+  const q = encodeURIComponent(title.trim());
   return [
     { name: '博客來', url: `https://search.books.com.tw/search/query/key/${q}/` },
     { name: '誠品',   url: `https://www.eslite.com/Search?keyword=${q}` },
@@ -1248,7 +1292,7 @@ function buildShareCaption(book) {
     const mt = MOOD_TAGS.find(m => m.name === t);
     return mt ? mt.emoji : '';
   }).filter(Boolean).join('');
-  const links = buyLinks(book.title, book.author);
+  const links = buyLinks(book.title);
   let text = `《${book.title}》`;
   if (book.author) text += `\n${book.author}`;
   if (moodEmojis) text += `  ${moodEmojis}`;
@@ -1396,7 +1440,7 @@ async function exportPublicShelf() {
       isMonthlyPick: !!b.isMonthlyPick,
       isYearlyPick: !!b.isYearlyPick,
       year: new Date(b.dateAdded).getFullYear(),
-      buyLinks: buyLinks(b.title, b.author || ''),
+      buyLinks: buyLinks(b.title),
     };
   }));
 
@@ -1819,6 +1863,22 @@ function matchesSearch(book, query) {
   return fields.includes(q);
 }
 
+function sortBooks(books, by) {
+  const arr = [...books];
+  if (by === 'oldest') {
+    return arr.sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded));
+  }
+  if (by === 'picks') {
+    return arr.sort((a, b) => {
+      const aw = (a.isYearlyPick ? 2 : 0) + (a.isMonthlyPick ? 1 : 0);
+      const bw = (b.isYearlyPick ? 2 : 0) + (b.isMonthlyPick ? 1 : 0);
+      if (aw !== bw) return bw - aw;
+      return new Date(b.dateAdded) - new Date(a.dateAdded);
+    });
+  }
+  return arr.sort((a, b) => new Date(b.dateAdded) - new Date(a.dateAdded));
+}
+
 function renderBookshelf() {
   const yearsSet = new Set(allBooks.map(b => new Date(b.dateAdded).getFullYear()));
   yearsSet.add(state.year);
@@ -1826,12 +1886,13 @@ function renderBookshelf() {
 
   const isSearching = !!state.searchQuery.trim();
   // 搜尋時跨年份跨分類找;沒搜尋時走年份+分類篩選
-  const filtered = isSearching
+  const filteredRaw = isSearching
     ? allBooks.filter(b => matchesSearch(b, state.searchQuery))
     : allBooks.filter(b => {
         const y = new Date(b.dateAdded).getFullYear();
         return y === state.year && (state.category === '全部' || b.category === state.category);
       });
+  const filtered = sortBooks(filteredRaw, state.sortBy);
 
   const yearChips = years.map(y =>
     `<button class="chip year-chip ${y === state.year ? 'active' : ''}" data-year="${y}">${y}</button>`
@@ -1851,21 +1912,48 @@ function renderBookshelf() {
     ? `<div class="search-status">搜尋「${escapeHtml(state.searchQuery)}」找到 ${filtered.length} 本（跨全部年份/分類）</div>`
     : '';
 
+  const sortOpts = [
+    ['newest', '📅 最新加入'],
+    ['oldest', '🕰 最早加入'],
+    ['picks',  '⭐👑 選書優先'],
+  ];
+  const sortRow = (isSearching || allBooks.length === 0) ? '' : `
+    <div class="sort-row">
+      <span class="sort-label">排序</span>
+      <select id="sort-select" class="sort-select">
+        ${sortOpts.map(([v, l]) =>
+          `<option value="${v}" ${state.sortBy === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </div>`;
+
   const filterChips = isSearching ? '' : `
     <div class="chip-row">${yearChips}</div>
     <div class="chip-row">${catChips}</div>`;
 
-  const emptyHTML = isSearching
-    ? `<div class="empty-state">
+  let emptyHTML;
+  if (isSearching) {
+    emptyHTML = `<div class="empty-state">
         <div class="empty-icon">🔍</div>
         <p>找不到符合的書</p>
         <p class="small">試試不同的關鍵字</p>
-      </div>`
-    : `<div class="empty-state">
-        <div class="empty-icon">📖</div>
-        <p>還沒有書</p>
-        <p class="small">按右上角 + 加第一本</p>
       </div>`;
+  } else if (allBooks.length === 0) {
+    // 完全空書架:第一次使用的引導
+    emptyHTML = `<div class="empty-state empty-onboarding">
+        <div class="empty-icon">📖</div>
+        <h3>歡迎來到你的書架</h3>
+        <p>讀完一本書，加進來。慢慢累積屬於你的閱讀軌跡。</p>
+        <p class="small">想分享給朋友？做張圖卡，貼到 IG 或 Threads。</p>
+        <button class="btn primary" id="empty-add-first">+ 加第一本書</button>
+      </div>`;
+  } else {
+    // 該年份/分類沒書,但其他地方有
+    emptyHTML = `<div class="empty-state">
+        <div class="empty-icon">📖</div>
+        <p>這個年份/分類還沒有書</p>
+        <p class="small">換個年份或分類看看，或按右上角 + 新增</p>
+      </div>`;
+  }
 
   const cells = filtered.length === 0 ? emptyHTML : filtered.map(renderBookCell).join('');
 
@@ -1873,6 +1961,7 @@ function renderBookshelf() {
     ${searchRow}
     ${searchStatus}
     ${filterChips}
+    ${sortRow}
     <main class="bookshelf-grid">${cells}</main>
     ${renderNav()}`;
 }
@@ -1916,6 +2005,22 @@ function attachBookshelfListeners() {
     state.showAddBook = true;
     render();
   });
+
+  const emptyAddFirst = document.getElementById('empty-add-first');
+  if (emptyAddFirst) {
+    emptyAddFirst.addEventListener('click', () => {
+      state.showAddBook = true;
+      render();
+    });
+  }
+
+  const sortSelect = document.getElementById('sort-select');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', e => {
+      state.sortBy = e.target.value;
+      render();
+    });
+  }
 
   // 搜尋輸入(debounce + re-focus)
   const searchInput = document.getElementById('search-input-shelf');
@@ -1974,7 +2079,7 @@ function renderAddBookModal() {
             </label>
           </div>
           <button class="btn ghost full" id="ocr-btn" disabled style="margin-top:8px">
-            ✨ AI 辨識封面 → 自動填書名
+            ✨ AI 辨識封面 → 自動填書名、作者
           </button>
           <p class="muted small" style="margin-top:6px">電子書可以截圖封面也行</p>
         </section>
@@ -2049,14 +2154,16 @@ function attachAddBookListeners() {
       const result = await ocrCover(addForm.coverBlob);
       if (result.title) titleInput.value = result.title;
       if (result.author) authorInput.value = result.author;
-      if (result.publisher) {
-        publisherInput.value = result.publisher;
-      } else if (result.title) {
-        // 封面看不到出版社 → 背景查 Google Books 補
-        ocrBtn.innerHTML = '<span class="spin"></span>查出版社中…';
-        const pub = await autoFillPublisher(result.title, result.author);
-        if (pub) publisherInput.value = pub;
+      if (result.publisher) publisherInput.value = result.publisher;
+
+      // 作者或出版社缺的話，用書名查 Google Books 補
+      if (result.title && (!result.author || !result.publisher)) {
+        ocrBtn.innerHTML = '<span class="spin"></span>查書本資料中…';
+        const info = await autoFillBookInfo(result.title, result.author);
+        if (!result.author && info.author) authorInput.value = info.author;
+        if (!result.publisher && info.publisher) publisherInput.value = info.publisher;
       }
+
       updateForm();
       ocrBtn.innerHTML = '✅ 已填入，可微調';
       setTimeout(() => {
@@ -2066,7 +2173,7 @@ function attachAddBookListeners() {
     } catch (e) {
       ocrBtn.innerHTML = `❌ ${e.message.substring(0, 40)}`;
       setTimeout(() => {
-        ocrBtn.innerHTML = '✨ AI 辨識封面 → 自動填書名';
+        ocrBtn.innerHTML = '✨ AI 辨識封面 → 自動填書名、作者';
         ocrBtn.disabled = false;
       }, 3000);
     }
@@ -2121,6 +2228,14 @@ function attachAddBookListeners() {
     render();
   });
   saveBtn.addEventListener('click', async () => {
+    // 防雙擊/手抖造成重複儲存
+    if (saveBtn.dataset.saving === '1') return;
+    if (!addForm.title) return;
+    saveBtn.dataset.saving = '1';
+    saveBtn.disabled = true;
+    const origLabel = saveBtn.textContent;
+    saveBtn.innerHTML = '<span class="spin"></span>儲存中…';
+
     const book = withDefaults({
       id: uuid(),
       title: addForm.title,
@@ -2135,13 +2250,20 @@ function attachAddBookListeners() {
       aiSummary: '',
       summaryStyle: 'bullet',
     });
-    await saveBookDB(book);
-    state.showAddBook = false;
-    // 檢查里程碑
-    const total = (await getAllBooksDB()).length;
-    const ms = checkMilestone(total);
-    if (ms) state.showMilestone = ms;
-    render();
+
+    try {
+      await saveBookDB(book);
+      state.showAddBook = false;
+      const total = (await getAllBooksDB()).length;
+      const ms = checkMilestone(total);
+      if (ms) state.showMilestone = ms;
+      render();
+    } catch (e) {
+      saveBtn.dataset.saving = '0';
+      saveBtn.disabled = false;
+      saveBtn.textContent = origLabel;
+      alert(`儲存失敗：${e.message}`);
+    }
   });
 }
 
@@ -2150,7 +2272,7 @@ function renderDetail() {
   const b = currentBook;
   const cover = coverDataURL(b);
   const sortedNotes = [...currentNotes].sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded));
-  const links = buyLinks(b.title, b.author);
+  const links = buyLinks(b.title);
 
   return `${renderHeader('',
     '<button class="text-btn" id="back-btn">← 書架</button>',
