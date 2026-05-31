@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "xiaoshuchong-proxy",
+  "main": "worker.js",
+  "compatibility_date": "2026-05-01",
+  "observability": {
+    "enabled": true
+  },
+  "kv_namespaces": [
+    {
+      "binding": "RATE",
+      "id": "f11490f525134531889ec455e774385b"
+    }
+  ]
+}

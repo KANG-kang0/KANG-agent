@@ -648,27 +648,38 @@ async function searchGoogleBooks(query) {
 }
 
 // ============================================================
-// Claude
+// Claude（透過 Cloudflare Worker proxy，前端不持有 API key）
+// 沒設 CLAUDE_PROXY_URL 時 fallback 直接打 Anthropic（僅本機開發）
 // ============================================================
-function claudeHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    'x-api-key': window.CONFIG.CLAUDE_API_KEY,
-    'anthropic-version': '2023-06-01',
-    'anthropic-dangerous-direct-browser-access': 'true',
-  };
-}
-
 async function callClaude(body) {
-  if (!window.CONFIG.CLAUDE_API_KEY) {
-    throw new Error('請先在 config.js 填入 Claude API Key');
+  const proxyURL = window.CONFIG.CLAUDE_PROXY_URL;
+  const directKey = window.CONFIG.CLAUDE_API_KEY;
+  if (!proxyURL && !directKey) {
+    throw new Error('請先在 config.js 設定 CLAUDE_PROXY_URL 或 CLAUDE_API_KEY');
   }
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+
+  const url = proxyURL || 'https://api.anthropic.com/v1/messages';
+  const headers = { 'Content-Type': 'application/json' };
+  if (!proxyURL) {
+    headers['x-api-key'] = directKey;
+    headers['anthropic-version'] = '2023-06-01';
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+  }
+
+  const res = await fetch(url, {
     method: 'POST',
-    headers: claudeHeaders(),
+    headers,
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    if (res.status === 429) {
+      let msg = '今日用量已達上限，明天再試';
+      try {
+        const j = await res.json();
+        if (j.message) msg = j.message;
+      } catch {}
+      throw new Error(msg);
+    }
     const err = await res.text();
     throw new Error(`API ${res.status}：${err.substring(0, 200)}`);
   }

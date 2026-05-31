@@ -5,6 +5,10 @@
 小書蟲/App/Config.swift
 小書蟲-web/config.js
 
+# Wrangler 本機 cache
+.wrangler/
+node_modules/
+
 # Xcode
 *.xcuserstate
 xcuserdata/
