@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stock-sentinel-bot",
+  "main": "worker.js",
+  "compatibility_date": "2026-05-01",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    // 使用者白名單：逗號分隔的 Telegram user id（空字串 = 開放所有人）
+    "ALLOWED_USER_IDS": "8931204151"
+  }
+}
