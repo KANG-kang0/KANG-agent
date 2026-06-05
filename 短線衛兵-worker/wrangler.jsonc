@@ -8,6 +8,6 @@
   },
   "vars": {
     // 使用者白名單：逗號分隔的 Telegram user id（空字串 = 開放所有人）
-    "ALLOWED_USER_IDS": "8931204151"
+    "ALLOWED_USER_IDS": "8931204151,8443045461"
   }
 }
