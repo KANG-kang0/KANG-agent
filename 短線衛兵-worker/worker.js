@@ -107,8 +107,11 @@ async function handleMessage(msg, env) {
     const report = formatReport(stockId, company, price, inst, revenue, disposition, analysis);
 
     await sendMessage(env, chatId, report, "HTML");
-    await cache.put(cacheKey,
-      new Response(report, { headers: { "Cache-Control": "max-age=600" } }));
+    // 只有資料完整（公司名稱有抓到，非退回代號）才快取，避免把降級報告存起來
+    if (company.name !== stockId) {
+      await cache.put(cacheKey,
+        new Response(report, { headers: { "Cache-Control": "max-age=600" } }));
+    }
   } catch (e) {
     if (e instanceof StockNotFound) {
       await sendMessage(env, chatId, `⚠️ 查無此股票代號：${stockId}\n（請確認代號是否正確）`);
@@ -128,13 +131,22 @@ async function finmindGet(dataset, dataId, startDate, endDate, env) {
     dataset, data_id: dataId, start_date: startDate, end_date: endDate,
   });
   if (env.FINMIND_TOKEN) params.set("token", env.FINMIND_TOKEN);
-  const resp = await fetch(`${FINMIND_API}?${params}`, {
-    headers: { "User-Agent": "Mozilla/5.0" },
-  });
-  if (!resp.ok) throw new Error(`FinMind HTTP ${resp.status}`);
-  const data = await resp.json();
-  if (data.status !== 200) throw new Error(`FinMind: ${data.msg || "unknown"}`);
-  return data.data || [];
+  const url = `${FINMIND_API}?${params}`;
+
+  // 重試一次：免費匿名額度（共用 IP）偶爾被限流，補一個 token 才是根治。
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) await new Promise(r => setTimeout(r, 700));
+    try {
+      const resp = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (data.status !== 200) throw new Error(`status=${data.status} msg=${data.msg}`);
+      return data.data || [];
+    } catch (e) { lastErr = e; }
+  }
+  console.warn(`FinMind ${dataset} 失敗(重試後): ${lastErr}`);
+  throw lastErr;
 }
 
 function dateStr(d) { return d.toISOString().slice(0, 10); }
@@ -230,7 +242,8 @@ async function getCompanyInfo(stockId, env) {
       const r = rows[rows.length - 1];
       return { name: r.stock_name || stockId, industry: r.industry_category || "未知" };
     }
-  } catch { /* fallback below */ }
+    console.warn(`getCompanyInfo ${stockId}: 空資料，用 fallback`);
+  } catch (e) { console.warn(`getCompanyInfo ${stockId} fallback: ${e}`); }
   return { name: stockId, industry: "未知" };
 }
 
