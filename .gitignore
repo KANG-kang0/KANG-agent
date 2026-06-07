@@ -5,6 +5,11 @@
 小書蟲/小書蟲/App/Config.swift
 小書蟲/小書蟲-web/config.js
 
+# 撲滿：子專案各自是獨立 git repo（已有 GitHub 遠端），不在 KANG-agent 重複納管。
+# 只追蹤沒有自己 repo 的鬆散檔（撲滿/排程觸發器/、打開撲滿討論.command）。
+撲滿/自動化撲滿/
+撲滿/撲滿-web/
+
 # Wrangler 本機 cache
 .wrangler/
 node_modules/

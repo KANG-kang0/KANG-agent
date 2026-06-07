@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "coin-seed-cron",
+  "main": "worker.js",
+  "compatibility_date": "2026-05-01",
+  "triggers": {
+    // Cloudflare cron 用 UTC。
+    // 每日推播：台灣 20:33（週一~五）= UTC 12:33
+    // 每週週報：台灣週日 20:00 = UTC 週日 12:00
+    "crons": ["33 12 * * 1-5", "0 12 * * SUN"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
