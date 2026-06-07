@@ -13,9 +13,16 @@
 //   DAILY_CAP_TOTAL     = 100   （全體每日總次數上限；建議 50-200）
 //   DAILY_CAP_PER_IP    = 20    （單一裝置每日次數上限）
 //
+//   --- 以下兩個是給「Supabase 保活 cron」用（防止免費專案因閒置被暫停）---
+//   SUPABASE_URL        = https://xxxx.supabase.co
+//   SUPABASE_ANON_KEY   = eyJ...（anon key，安全可放，RLS 保護）
+//
 // KV Binding（Cloudflare Worker → Settings → Variables → KV Namespace Bindings）：
 //   Variable name: RATE
 //   namespace:     建一個叫「xiaoshuchong-rate」的 KV namespace
+//
+// Cron Trigger（wrangler.jsonc 內已設）：每天打一次 Supabase，
+//   讓免費專案保持「有活動」狀態，不會被自動暫停。
 // ============================================================
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -73,7 +80,31 @@ export default {
       },
     });
   },
+
+  // Supabase 保活：cron 每天打一次輕量查詢，讓免費專案不會因閒置被暫停。
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(keepSupabaseAlive(env));
+  },
 };
+
+async function keepSupabaseAlive(env) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+    console.log('keep-alive skipped: SUPABASE_URL / SUPABASE_ANON_KEY 未設定');
+    return;
+  }
+  const url = `${env.SUPABASE_URL}/rest/v1/books?select=id&limit=1`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        apikey: env.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+      },
+    });
+    console.log(`keep-alive ping -> HTTP ${res.status}`);
+  } catch (err) {
+    console.log(`keep-alive failed: ${err}`);
+  }
+}
 
 // ----------------- Rate limit -----------------
 async function checkAndIncrementRateLimit(request, env) {
