@@ -14,16 +14,16 @@
 ## 檔案位置
 | 路徑 | 說明 |
 |------|------|
-| `小書蟲-web/` | **PWA 前端**（部署到 Cloudflare Pages） |
-| `小書蟲-web/app.js` | 主程式（全部邏輯都在這） |
-| `小書蟲-web/config.js` | 前端設定檔（**已 gitignore**，含 Worker URL + Supabase key） |
-| `小書蟲-web/supabase-schema.sql` | Supabase 初始化 SQL |
-| `小書蟲-worker/` | **Claude API proxy**（部署到 Cloudflare Workers）|
-| `小書蟲-worker/worker.js` | Worker 程式碼（藏 API key、Origin 檢查、用量限制） |
-| `小書蟲-worker/wrangler.jsonc` | Worker 部署設定 |
-| `小書蟲-worker/README.md` | Worker 部署文件 |
-| `小書蟲/` | iOS 原生版（Swift + SwiftData，等換新 Mac 後啟用，暫停開發） |
-| `啟動小書蟲.command` | 雙擊起本機 server 的 launcher |
+| `小書蟲/小書蟲-web/` | **PWA 前端**（部署到 Cloudflare Pages） |
+| `小書蟲/小書蟲-web/app.js` | 主程式（全部邏輯都在這） |
+| `小書蟲/小書蟲-web/config.js` | 前端設定檔（**已 gitignore**，含 Worker URL + Supabase key） |
+| `小書蟲/小書蟲-web/supabase-schema.sql` | Supabase 初始化 SQL |
+| `小書蟲/小書蟲-worker/` | **Claude API proxy**（部署到 Cloudflare Workers）|
+| `小書蟲/小書蟲-worker/worker.js` | Worker 程式碼（藏 API key、Origin 檢查、用量限制） |
+| `小書蟲/小書蟲-worker/wrangler.jsonc` | Worker 部署設定 |
+| `小書蟲/小書蟲-worker/README.md` | Worker 部署文件 |
+| `小書蟲/小書蟲/` | iOS 原生版（Swift + SwiftData，等換新 Mac 後啟用，暫停開發） |
+| `小書蟲/啟動小書蟲.command` | 雙擊起本機 server 的 launcher |
 
 ## 安全約束（重要）
 - `config.js` 一定要保持 gitignored，內含 Claude API key

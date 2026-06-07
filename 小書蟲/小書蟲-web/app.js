@@ -43,6 +43,10 @@ let currentNotes = [];
 let sb = null;
 let currentUser = null;
 
+// 只有站長本人登入時才出現的功能（例如「複製給寫貼文」），其他使用者完全看不到
+const OWNER_EMAIL = 'k38513411@gmail.com';
+function isOwner() { return currentUser?.email === OWNER_EMAIL; }
+
 const state = {
   view: 'bookshelf',
   year: new Date().getFullYear(),
@@ -1324,6 +1328,31 @@ async function copyShareCaption(book) {
   }
 }
 
+// 站長專用：把這本書的素材整成帶標籤的純文字，貼到 Claude Code 的 /reading-note 寫成貼文
+function buildPostSourceText(book) {
+  const moods = (book.moodTags || []).join('、');
+  return [
+    '【給 reading-note 的書資料】',
+    `書名：${book.title || ''}`,
+    `作者：${book.author || ''}`,
+    `出版社：${book.publisher || ''}`,
+    `讀書情境：${book.readingContext || ''}`,
+    `金句：${book.quoteForCard || ''}`,
+    `AI重點：${book.aiSummary || ''}`,
+    `推薦給誰：${book.recommendFor || ''}`,
+    `心情標籤：${moods}`,
+  ].join('\n');
+}
+
+async function copyPostSource(book) {
+  try {
+    await navigator.clipboard.writeText(buildPostSourceText(book));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ============================================================
 // 匯出 / 匯入
 // ============================================================
@@ -2384,6 +2413,7 @@ function renderDetail() {
         <div class="char-count" id="quote-count">${countChars(b.quoteForCard)} / ${QUOTE_MAX}</div>
       </label>
       <button class="btn primary full" id="open-share">📤 做圖卡分享</button>
+      ${isOwner() ? '<button class="btn full" id="copy-for-post" style="margin-top:8px">📝 複製給寫貼文</button>' : ''}
     </section>
 
     <section class="buy-section">
@@ -2521,6 +2551,15 @@ function attachDetailListeners() {
     state.shareTemplate = currentBook.quoteForCard ? 'warm' : 'warm';
     render();
   });
+
+  const copyForPostBtn = document.getElementById('copy-for-post');
+  if (copyForPostBtn) {
+    copyForPostBtn.addEventListener('click', async () => {
+      const ok = await copyPostSource(currentBook);
+      copyForPostBtn.textContent = ok ? '✅ 已複製，貼到 /reading-note' : '⚠️ 複製失敗，手動選取';
+      setTimeout(() => { copyForPostBtn.textContent = '📝 複製給寫貼文'; }, 2500);
+    });
+  }
 
   document.getElementById('detail-delete').addEventListener('click', async () => {
     if (confirm(`刪除《${currentBook.title}》？\n所有筆記也會一併刪除。`)) {
