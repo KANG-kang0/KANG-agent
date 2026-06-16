@@ -5,6 +5,7 @@
 // ============================================================
 const DB_NAME = '小書蟲';
 const DB_VERSION = 1;
+const APP_VERSION = '2026.06.16';  // 改版後更新這行，設定→關於 會顯示，方便確認手機載到新版
 const CATEGORIES = ['商業', '小說', '心理', '自我成長', '傳記', '科學', '其他'];
 const NOTES_MAX = 7;
 const NOTE_FOR_CARD_MAX = 50;
@@ -2746,6 +2747,7 @@ function renderYearly() {
       <section class="settings-section">
         <h3>📖 關於</h3>
         <p class="desc">小書蟲是私人讀書筆記。AI 整理的摘要只給你自己看，不會出現在分享圖卡上。讀到喜歡的書，記得買正版支持作者。</p>
+        <p class="muted small" style="margin-top:6px">版本 ${APP_VERSION}</p>
       </section>
 
       <div class="spacer"></div>
