@@ -331,6 +331,8 @@ async function saveBookCloud(book) {
   if (book.coverBlob instanceof Blob) {
     book.coverStoragePath = await uploadCoverToStorage(book.coverBlob, book.id);
     book.coverBlob = null;
+    // 上傳後立刻補上簽名 URL,否則同一次 render 會找不到封面而變成問號
+    book.coverURL = await getSignedURL(book.coverStoragePath);
   }
   const row = bookToRow(book);
   const { error } = await sb.from('books').upsert(row);
@@ -534,6 +536,18 @@ function noteImageURL(note) {
   return '';
 }
 
+// 把一則筆記還原成真正的圖片 Blob：本機筆記直接用 imageBlob，
+// 雲端同步的筆記(imageBlob 為 null)則抓 imageURL 下載回來。
+async function noteToBlob(note) {
+  if (note.imageBlob instanceof Blob) return note.imageBlob;
+  if (note.imageURL) {
+    const res = await fetch(note.imageURL);
+    if (!res.ok) throw new Error('讀取雲端筆記圖片失敗，請稍後再試');
+    return await res.blob();
+  }
+  return null;
+}
+
 function countChars(s) {
   return [...(s || '')].length;  // 用 spread 處理 emoji 跟中文
 }
@@ -670,11 +684,23 @@ async function callClaude(body) {
     headers['anthropic-dangerous-direct-browser-access'] = 'true';
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  // 加逾時保護：圖片大或網路慢時，不要讓畫面一直轉圈圈、轉不出結果。
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('AI 處理逾時(可能圖片太大或網路太慢)，請減少張數或換較清楚的網路再試');
+    throw new Error('連線失敗，請檢查網路後重試');
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     if (res.status === 429) {
       let msg = '今日用量已達上限，明天再試';
@@ -2532,9 +2558,9 @@ function attachDetailListeners() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>AI 整理中…請稍候';
     try {
-      const blobs = [...currentNotes]
-        .sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded))
-        .map(n => n.imageBlob);
+      const sorted = [...currentNotes]
+        .sort((a, b) => new Date(a.dateAdded) - new Date(b.dateAdded));
+      const blobs = (await Promise.all(sorted.map(noteToBlob))).filter(Boolean);
       const result = await summarizeNotes(blobs, currentBook.summaryStyle, currentBook.title);
       currentBook.aiSummary = result;
       await saveBookDB(currentBook);

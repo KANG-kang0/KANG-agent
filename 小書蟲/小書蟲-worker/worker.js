@@ -32,6 +32,18 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) });
     }
+
+    // 手動／外部監控用：GET /keepalive 直接戳一次 Supabase 並回報狀態。
+    // 讓 cron 之外多一條獨立、可觀測的保活線（cron 若靜默失敗，這條會被監控抓到）。
+    const path = new URL(request.url).pathname;
+    if (request.method === 'GET' && path === '/keepalive') {
+      const r = await keepSupabaseAlive(env);
+      return json(
+        { ok: r.ok, supabase_status: r.status, reason: r.reason || null, ts: new Date().toISOString() },
+        r.ok ? 200 : 502, request, env,
+      );
+    }
+
     if (request.method !== 'POST') {
       return json({ error: 'method_not_allowed' }, 405, request, env);
     }
@@ -90,7 +102,7 @@ export default {
 async function keepSupabaseAlive(env) {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
     console.log('keep-alive skipped: SUPABASE_URL / SUPABASE_ANON_KEY 未設定');
-    return;
+    return { ok: false, status: 0, reason: 'env_not_set' };
   }
   const url = `${env.SUPABASE_URL}/rest/v1/books?select=id&limit=1`;
   try {
@@ -101,8 +113,10 @@ async function keepSupabaseAlive(env) {
       },
     });
     console.log(`keep-alive ping -> HTTP ${res.status}`);
+    return { ok: res.ok, status: res.status };
   } catch (err) {
     console.log(`keep-alive failed: ${err}`);
+    return { ok: false, status: 0, reason: String(err) };
   }
 }
 

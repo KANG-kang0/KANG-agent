@@ -1,0 +1,7 @@
+wrangler.jsonc
+.assetsignore
+.wrangler
+README.md
+serve.py
+config.example.js
+supabase-schema.sql
