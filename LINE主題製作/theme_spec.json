@@ -1,0 +1,446 @@
+{
+  "slots": {
+    "a_12": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_13": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_14": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_15": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_16": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_17": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_18": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_19": {
+      "size": [
+        116,
+        116
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_20": {
+      "size": [
+        247,
+        247
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_21": {
+      "size": [
+        247,
+        247
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "a_22": {
+      "size": [
+        1300,
+        1300
+      ],
+      "mode": "cover",
+      "gray": null,
+      "label": "Android聊天背景",
+      "max_kb": 900
+    },
+    "i_03": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_04": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_07": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_08": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_12": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_13": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_14": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_15": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_16": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_17": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_18": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_19": {
+      "size": [
+        120,
+        120
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_20": {
+      "size": [
+        240,
+        240
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_21": {
+      "size": [
+        240,
+        240
+      ],
+      "mode": "contain",
+      "gray": null,
+      "label": ""
+    },
+    "i_22": {
+      "size": [
+        1482,
+        1334
+      ],
+      "mode": "cover",
+      "gray": null,
+      "label": "iOS聊天背景",
+      "max_kb": 900
+    },
+    "i_25": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_26": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_27": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "錢包OFF"
+    },
+    "i_28": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "錢包ON"
+    },
+    "i_29": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "主頁OFF"
+    },
+    "i_30": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "主頁ON"
+    },
+    "i_31": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_32": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_33": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "VOOM OFF"
+    },
+    "i_34": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "VOOM ON"
+    },
+    "i_35": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "Shopping OFF"
+    },
+    "i_36": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": "Shopping ON"
+    },
+    "i_37": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    },
+    "i_38": {
+      "size": [
+        128,
+        150
+      ],
+      "mode": "contain",
+      "gray": [
+        80,
+        56
+      ],
+      "label": ""
+    }
+  },
+  "thumbnails": {
+    "android_thumbnail": {
+      "size": [
+        136,
+        202
+      ],
+      "mode": "contain",
+      "label": "Android縮圖"
+    },
+    "ios_thumbnail": {
+      "size": [
+        200,
+        284
+      ],
+      "mode": "contain",
+      "label": "iOS縮圖"
+    },
+    "store_thumbnail": {
+      "size": [
+        198,
+        278
+      ],
+      "mode": "contain",
+      "label": "商店縮圖"
+    }
+  }
+}
