@@ -3,8 +3,12 @@
   "configurations": [
     {
       "name": "xiaoshuchong-web",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "http-server", "小書蟲/小書蟲-web", "-p", "8000", "-c-1", "--silent"],
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-I",
+        "-c",
+        "import functools, http.server, socketserver; h = functools.partial(http.server.SimpleHTTPRequestHandler, directory='/Users/kang/Downloads/KANG-agent/小書蟲/小書蟲-web'); socketserver.TCPServer.allow_reuse_address = True; socketserver.TCPServer(('', 8000), h).serve_forever()"
+      ],
       "port": 8000
     }
   ]
