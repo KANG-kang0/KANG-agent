@@ -8,6 +8,9 @@
   },
   "vars": {
     // 使用者白名單：逗號分隔的 Telegram user id（空字串 = 開放所有人）
-    "ALLOWED_USER_IDS": "8931204151,8443045461"
+    "ALLOWED_USER_IDS": "8931204151,8443045461",
+    // /risk 風控掃描清單（第一階段固定清單；上限 15 檔，改完要重新 deploy）
+    // 來源：撲滿 watchlist + positions，之後改讀零錢種子 Supabase（見 規劃-風控版面.md）
+    "WATCHLIST": "2330,2317,2454,2412,3044"
   }
 }

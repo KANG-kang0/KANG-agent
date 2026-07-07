@@ -74,8 +74,13 @@ async function handleMessage(msg, env) {
     return;
   }
 
+  if (text === "/risk" || text.startsWith("/risk@") || text === "風控") {
+    await handleRisk(env, chatId);
+    return;
+  }
+
   if (!/^\d{4,6}$/.test(text)) {
-    await sendMessage(env, chatId, "請直接傳股票代號（4-6位數字），例如：2330");
+    await sendMessage(env, chatId, "請直接傳股票代號（4-6位數字），例如：2330\n或傳 /risk 看追蹤清單的風控快報");
     return;
   }
 
@@ -104,6 +109,10 @@ async function handleMessage(msg, env) {
     ]);
 
     const analysis = await analyzeStock(env, stockId, company, price, inst, revenue, disposition);
+    // 處置股不交給 AI 自由發揮，一律覆寫為迴避（判斷-話術責任邊界.md 第 3 條）
+    if (disposition) {
+      analysis.entry_advice = "處置股交易受限且波動異常，建議迴避，等恢復正常交易再評估。";
+    }
     const report = formatReport(stockId, company, price, inst, revenue, disposition, analysis);
 
     await sendMessage(env, chatId, report, "HTML");
@@ -123,6 +132,85 @@ async function handleMessage(msg, env) {
 }
 
 class StockNotFound extends Error {}
+
+// ---------- /risk 風控快報 ----------
+// 判準與個股報告同源（同一個 getStockPrice），數字定義見 規劃-風控版面.md：
+//   過熱：RSI14 > 75，或 20MA 乖離 > +15%，或處置股
+//   增溫：量比(5日均量/20日均量) > 1.5 且 5日漲幅在 +3%～+15%
+//   降溫：量比 < 0.8
+function classifyRisk(p, disposition) {
+  const reasons = [];
+  if (disposition) reasons.push("處置股警示");
+  if (p.rsi > 75) reasons.push(`RSI ${p.rsi}`);
+  if (p.bias20 > 15) reasons.push(`乖離 +${p.bias20}%`);
+  if (reasons.length) return { zone: "hot", reasons };
+  if (p.vol_ratio > 1.5 && p.gain_5d >= 3 && p.gain_5d <= 15) {
+    return { zone: "warm", reasons: [`量比 ${p.vol_ratio}x`, `5日 ${signed(p.gain_5d)}%`] };
+  }
+  if (p.vol_ratio < 0.8) return { zone: "cool", reasons: [`量比 ${p.vol_ratio}x`] };
+  return { zone: null, reasons: [] };
+}
+
+async function handleRisk(env, chatId) {
+  const list = (env.WATCHLIST || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 15);
+  if (!list.length) {
+    await sendMessage(env, chatId, "追蹤清單是空的，請管理員在 wrangler.jsonc 設定 WATCHLIST。");
+    return;
+  }
+
+  const cache = caches.default;
+  const cacheKey = new Request("https://cache.local/risk-report");
+  const hit = await cache.match(cacheKey);
+  if (hit) {
+    await sendMessage(env, chatId, await hit.text(), "HTML");
+    console.log("Cache hit /risk");
+    return;
+  }
+
+  await sendMessage(env, chatId, `🌡 掃描 ${list.length} 檔追蹤股中，請稍候...`);
+
+  const zones = { hot: [], warm: [], cool: [] };
+  const failed = [];
+  let asOf = "";
+  // FinMind 免費速率有限：序列化請求，單檔失敗不影響整份報告
+  for (const sym of list) {
+    try {
+      const [p, disposition] = await Promise.all([
+        getStockPrice(sym, env),
+        isDisposition(sym).catch(() => false),
+      ]);
+      asOf = asOf || p.date;
+      const { zone, reasons } = classifyRisk(p, disposition);
+      if (zone) zones[zone].push(`  ${sym}  ${reasons.join("｜")}`);
+    } catch {
+      failed.push(sym);
+    }
+  }
+
+  const section = (icon, title, arr) =>
+    arr.length ? [`${icon} <b>${title}</b>`, ...arr.map(esc), ""] : [];
+  const parts = [
+    `🌡 <b>風控快報</b>`,
+    esc(asOfLine(asOf || "")),
+    "━━━━━━━━━━━━━━━━━━━━", "",
+    ...section("🔥", "過熱區（考慮減碼，別追高）", zones.hot),
+    ...section("📈", "增溫區（開始有量，可留意）", zones.warm),
+    ...section("❄️", "降溫區（量縮回落）", zones.cool),
+  ];
+  if (!zones.hot.length && !zones.warm.length && !zones.cool.length) {
+    parts.push("今天追蹤清單都在正常區，沒有特別訊號。", "");
+  }
+  if (failed.length) parts.push(esc(`（資料缺：${failed.join("、")}）`), "");
+  parts.push("━━━━━━━━━━━━━━━━━━━━",
+    `<i>⚠️ 本報告僅供參考，不構成投資建議；買賣請分批、部位量力。</i>`);
+
+  const report = parts.join("\n");
+  await sendMessage(env, chatId, report, "HTML");
+  if (!failed.length) {
+    await cache.put(cacheKey,
+      new Response(report, { headers: { "Cache-Control": "max-age=600" } }));
+  }
+}
 
 // ---------- FinMind ----------
 
@@ -194,7 +282,10 @@ async function getStockPrice(stockId, env) {
   const rsi = 100 - 100 / (1 + gain / (loss || 1));
 
   const past10 = n >= 11 ? close[n - 11] : close[0];
+  const past5 = n >= 6 ? close[n - 6] : close[0];
   const vol5 = mean(vol.slice(-6, -1));
+  const vol20 = mean(vol.slice(-21, -1));
+  const ma20v = ma(20);
 
   return {
     date: String(rows[rows.length - 1].date).slice(0, 10),
@@ -202,8 +293,11 @@ async function getStockPrice(stockId, env) {
     change_pct: round((close[n - 1] - close[n - 2]) / close[n - 2] * 100, 2),
     volume: Math.round(vol[n - 1] / 1000),       // 股 → 張
     vol_5avg: Math.round(vol5 / 1000),
-    ma5: round(ma(5), 2), ma10: round(ma(10), 2), ma20: round(ma(20), 2),
+    vol_ratio: round(vol5 / (vol20 || 1), 2),    // 5日均量 / 20日均量
+    ma5: round(ma(5), 2), ma10: round(ma(10), 2), ma20: round(ma20v, 2),
+    bias20: round((close[n - 1] - ma20v) / ma20v * 100, 1),
     k: round(kArr[n - 1], 1), d: round(dArr[n - 1], 1), rsi: round(rsi, 1),
+    gain_5d: round((close[n - 1] - past5) / past5 * 100, 1),
     gain_2w: round((close[n - 1] - past10) / past10 * 100, 1),
   };
 }
@@ -298,8 +392,10 @@ const SYSTEM_PROMPT = `你是一位台灣股市研究助理，專門幫短線交
 - 技術面：不要說「KD=85」，要說「漲得很快，買的人太多了，這種時候追進去容易被套」
 - 均線：不要說「股價在MA10之上」，要說「短線走勢向上，方向沒問題」
 - 建議：給明確的方向，不要模稜兩可
-- 持有建議：給出具體的停利/停損參考價位（用整數，不要小數，用「元」不用「$」）
+- 持有建議：給出具體的停利/停損參考價位（用整數，不要小數，用「元」不用「$」）；就算建議續抱，也一定要給停損價
 - 語氣：親切、白話、像朋友在說話，不說教
+- 禁語：絕不使用「一定」「穩賺」「保證」「全押」等字眼；絕不建議融資、借錢買股、當沖加碼、攤平凹單
+- 不確定的事（產業題材、客戶關係）明說不確定，不要編造具體數字或客戶名稱
 
 輸出必須是合法的 JSON，不要有多餘的說明文字。`;
 
@@ -400,7 +496,7 @@ function formatReport(stockId, company, price, inst, revenue, disposition, a) {
     "━━━━━━━━━━━━━━━━━━━━",
     "",
     `🏢 <b>公司在做什麼</b>`, esc(a.company_desc || ""), "",
-    `🤖 <b>AI 相關性</b>：${esc(aiBadge)}`, esc(a.ai_reason || ""), "",
+    `🤖 <b>AI 相關性</b>：${esc(aiBadge)}（AI 判讀，可能有誤）`, esc(a.ai_reason || ""), "",
     `💰 <b>今日行情</b>`,
     `• 收盤：${esc(price.close)} 元 ${esc(arrow)}${Math.abs(price.change_pct).toFixed(1)}%`,
     `• 成交量：${price.volume.toLocaleString()} 張`, "",
@@ -422,7 +518,7 @@ function formatReport(stockId, company, price, inst, revenue, disposition, a) {
   }
 
   parts.push("", "━━━━━━━━━━━━━━━━━━━━",
-    `<i>⚠️ 本報告僅供參考，不構成投資建議。</i>`);
+    `<i>⚠️ 本報告僅供參考，不構成投資建議；買賣請分批、部位量力。</i>`);
 
   return parts.join("\n");
 }
