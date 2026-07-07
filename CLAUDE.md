@@ -20,7 +20,7 @@
 
 1. **git commit / push**：先 `git status`，確認沒有機密檔（任何 `config.js`、`.env`、含 API key 的檔）被加入。撲滿子目錄的變更不屬於本 repo。
 2. **`wrangler deploy`**：先說出「我 deploy 的是哪個 Worker、為什麼」，並確認改的是對的那套（短線衛兵＝Worker 版）。secrets 一律用 `wrangler secret put`，不寫進程式碼。
-3. **公開分享小書蟲的兩個 workers.dev URL（前端與 proxy）**：禁止，前端目前 bundled Claude key。Supabase URL 與 anon key 可公開（RLS 保護）；「公開書架」匯出的自包含 HTML 可分享。
+3. **公開分享小書蟲的兩個 workers.dev URL（前端與 proxy）**：不要主動公開（proxy 是 API 成本入口；已有登入驗證＋Origin 檢查＋限流，但種子期仍低調）。Supabase URL 與 anon key 可公開（RLS 保護）；「公開書架」匯出的自包含 HTML 可分享。
 4. **改 Telegram webhook**：webhook 與 polling 不能並存，改之前確認現況。
 5. **刪檔、覆寫非自己建立的檔**：先看內容，與描述不符就停下來回報。
 

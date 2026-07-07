@@ -27,8 +27,9 @@
 | `啟動小書蟲.command` | 雙擊起本機 server 的 launcher |
 
 ## 安全約束（重要）
-- `config.js` 一定要保持 gitignored，內含 Claude API key
-- **不要把 Cloudflare 部署 URL 公開分享**，目前 Claude key 是 bundled 在 frontend
+- `config.js` 一定要保持 gitignored（含 proxy URL + Supabase key；Claude key 欄位已清空，全部走 proxy）
+- AI 功能**需要登入**：proxy 驗 Supabase token，未登入回 401，用量記進 `ai_usage` 表（2026-07 起）
+- 部署 URL 不主動公開分享（proxy 有 Origin 檢查＋每日限流，但仍是成本入口）
 - Supabase anon key 安全可公開（RLS 保護）
 - 分享書架請用「公開書架網頁」匯出（自包含 HTML，不含 API key）
 

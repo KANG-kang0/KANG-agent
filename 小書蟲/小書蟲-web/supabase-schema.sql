@@ -106,3 +106,30 @@ create policy "users update own files" on storage.objects
 -- ============================================================
 -- 完成 ✅
 -- ============================================================
+
+-- ============================================================
+-- ai_usage：AI 用量流水（per-user 計量，規劃-儲值與訂閱.md 階段 1）
+-- 已有專案補跑：只貼這一段到 SQL Editor 執行即可
+-- ============================================================
+create table if not exists public.ai_usage (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid references auth.users on delete cascade not null,
+  action        text not null default 'unknown',  -- ocr / summarize
+  model         text default '',
+  input_tokens  int default 0,
+  output_tokens int default 0,
+  created_at    timestamptz default now()
+);
+
+alter table public.ai_usage enable row level security;
+
+drop policy if exists "ai_usage select own" on public.ai_usage;
+create policy "ai_usage select own" on public.ai_usage
+  for select using (auth.uid() = user_id);
+
+drop policy if exists "ai_usage insert own" on public.ai_usage;
+create policy "ai_usage insert own" on public.ai_usage
+  for insert with check (auth.uid() = user_id);
+
+create index if not exists ai_usage_user_created
+  on public.ai_usage (user_id, created_at desc);

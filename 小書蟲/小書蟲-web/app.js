@@ -670,7 +670,7 @@ async function searchGoogleBooks(query) {
 // Claude（透過 Cloudflare Worker proxy，前端不持有 API key）
 // 沒設 CLAUDE_PROXY_URL 時 fallback 直接打 Anthropic（僅本機開發）
 // ============================================================
-async function callClaude(body) {
+async function callClaude(body, action) {
   const proxyURL = window.CONFIG.CLAUDE_PROXY_URL;
   const directKey = window.CONFIG.CLAUDE_API_KEY;
   if (!proxyURL && !directKey) {
@@ -683,6 +683,15 @@ async function callClaude(body) {
     headers['x-api-key'] = directKey;
     headers['anthropic-version'] = '2023-06-01';
     headers['anthropic-dangerous-direct-browser-access'] = 'true';
+  } else {
+    // proxy 要求登入 token 才能用 AI（per-user 計量，見 規劃-儲值與訂閱.md 階段 1）
+    const session = sb ? (await sb.auth.getSession()).data.session : null;
+    const token = session?.access_token;
+    if (!token) {
+      throw new Error('AI 功能需要先登入小書蟲帳號（設定 → 登入/註冊），登入後就能使用');
+    }
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Usage-Action'] = action || 'unknown';
   }
 
   // 加逾時保護：圖片大或網路慢時，不要讓畫面一直轉圈圈、轉不出結果。
@@ -703,6 +712,14 @@ async function callClaude(body) {
     clearTimeout(timer);
   }
   if (!res.ok) {
+    if (res.status === 401) {
+      let msg = 'AI 功能需要先登入，請重新登入後再試';
+      try {
+        const j = await res.json();
+        if (j.message) msg = j.message;
+      } catch {}
+      throw new Error(msg);
+    }
     if (res.status === 429) {
       let msg = '今日用量已達上限，明天再試';
       try {
@@ -743,7 +760,7 @@ async function ocrCover(blob) {
         { type: 'text', text: prompt },
       ],
     }],
-  });
+  }, 'ocr');
 
   // 找出 JSON 字串
   const match = text.match(/\{[\s\S]*\}/);
@@ -805,7 +822,7 @@ async function summarizeNotes(noteBlobs, style, bookTitle) {
     model: window.CONFIG.CLAUDE_MODEL,
     max_tokens: 700,
     messages: [{ role: 'user', content }],
-  });
+  }, 'summarize');
 }
 
 // ============================================================

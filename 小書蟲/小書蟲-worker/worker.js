@@ -28,7 +28,7 @@
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) });
     }
@@ -57,6 +57,22 @@ export default {
       return json({ error: 'server_misconfigured: CLAUDE_API_KEY missing' }, 500, request, env);
     }
 
+    // per-user 計量（規劃-儲值與訂閱.md 階段 1）：AI 呼叫必須帶 Supabase 登入 token，
+    // 匿名用量記不到人，之後點數制就沒有地基，所以未登入直接擋。
+    if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+      return json({ error: 'server_misconfigured: SUPABASE env missing' }, 500, request, env);
+    }
+    const authHeader = request.headers.get('Authorization') || '';
+    const userToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (!userToken) {
+      return json({ error: 'login_required', message: 'AI 功能需要先登入小書蟲帳號' }, 401, request, env);
+    }
+    const user = await verifySupabaseUser(env, userToken);
+    if (!user) {
+      return json({ error: 'login_required', message: '登入已過期，請重新登入後再試' }, 401, request, env);
+    }
+    const usageAction = request.headers.get('X-Usage-Action') || 'unknown';
+
     // 用量限制
     const limit = await checkAndIncrementRateLimit(request, env);
     if (limit.exceeded) {
@@ -82,6 +98,13 @@ export default {
     });
 
     const text = await upstream.text();
+
+    if (upstream.ok) {
+      let usage = {};
+      try { usage = JSON.parse(text).usage || {}; } catch {}
+      ctx.waitUntil(logAiUsage(env, userToken, user.id, usageAction, body.model || '', usage));
+    }
+
     return new Response(text, {
       status: upstream.status,
       headers: {
@@ -117,6 +140,46 @@ async function keepSupabaseAlive(env) {
   } catch (err) {
     console.log(`keep-alive failed: ${err}`);
     return { ok: false, status: 0, reason: String(err) };
+  }
+}
+
+// ----------------- Per-user 計量 -----------------
+async function verifySupabaseUser(env, token) {
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const user = await res.json();
+    return user && user.id ? user : null;
+  } catch {
+    return null;
+  }
+}
+
+// 用使用者自己的 token 寫入（RLS insert-own），失敗只留 log 不擋 AI 回應——
+// 計量表還沒建立時服務也要照常運作。
+async function logAiUsage(env, token, userId, action, model, usage) {
+  try {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/ai_usage`, {
+      method: 'POST',
+      headers: {
+        apikey: env.SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        action,
+        model,
+        input_tokens: usage.input_tokens || 0,
+        output_tokens: usage.output_tokens || 0,
+      }),
+    });
+    if (!res.ok) console.log(`ai_usage insert failed: HTTP ${res.status}`);
+  } catch (err) {
+    console.log(`ai_usage insert failed: ${err}`);
   }
 }
 
@@ -181,7 +244,7 @@ function corsHeaders(request, env) {
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Usage-Action',
     'Access-Control-Expose-Headers': 'X-Quota-Used-Today, X-Quota-Cap-Total',
     'Vary': 'Origin',
   };
