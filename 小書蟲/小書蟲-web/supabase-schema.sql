@@ -199,3 +199,32 @@ create policy "reactions public insert" on public.shelf_reactions
 
 create index if not exists shelf_reactions_shelf_idx
   on public.shelf_reactions (shelf_user, book_id);
+
+-- ============================================================
+-- 公開書架封面（2026-07-07 補）：只開放 covers/，筆記照片維持私密
+-- 已有專案補跑：只貼這一段執行即可
+-- ============================================================
+-- view 加回 cover_storage_path（路徑本身不敏感，需搭配下面的 policy 才讀得到檔案）
+create or replace view public.shelf_books as
+  select b.id, b.user_id, b.title, b.author, b.publisher, b.category,
+         b.cover_url, b.date_added, b.quote_for_card, b.note_for_card,
+         b.mood_tags, b.recommend_for, b.cover_storage_path
+  from public.books b
+  where exists (
+    select 1 from public.public_shelves s
+    where s.user_id = b.user_id and s.enabled
+  );
+
+grant select on public.shelf_books to anon, authenticated;
+
+-- 訪客可讀「公開書架主人」的封面檔（第 2 層資料夾必須是 covers）
+drop policy if exists "public shelf covers readable" on storage.objects;
+create policy "public shelf covers readable" on storage.objects
+  for select using (
+    bucket_id = 'book-images'
+    and (storage.foldername(name))[2] = 'covers'
+    and exists (
+      select 1 from public.public_shelves s
+      where s.user_id::text = (storage.foldername(name))[1] and s.enabled
+    )
+  );

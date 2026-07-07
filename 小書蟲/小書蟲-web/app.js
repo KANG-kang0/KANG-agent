@@ -3088,13 +3088,26 @@ async function renderPublicShelf(slug) {
     counts[r.book_id][r.kind]++;
   });
 
+  // 拍照上傳的封面走簽名網址（storage policy 只開放公開書架主人的 covers/）
+  const coverMap = {};
+  const needSign = books.filter(b => !b.cover_url && b.cover_storage_path);
+  if (needSign.length) {
+    try {
+      const { data: signed } = await sb.storage.from('book-images')
+        .createSignedUrls(needSign.map(b => b.cover_storage_path), 3600);
+      (signed || []).forEach((s, i) => {
+        if (s.signedUrl) coverMap[needSign[i].id] = s.signedUrl;
+      });
+    } catch { /* policy 還沒建：退回占位圖 */ }
+  }
+
   const name = shelf.display_name || shelf.slug;
   root.innerHTML = `
     ${renderHeader(`${name} 的書架`)}
     <main class="bookshelf">
       <p class="muted small" style="text-align:center;margin:10px 0">共 ${books.length} 本，用小書蟲記錄 🌱</p>
       ${books.length
-        ? `<div class="bookshelf-grid">${books.map(b => publicBookCell(b, counts[b.id])).join('')}</div>`
+        ? `<div class="bookshelf-grid">${books.map(b => publicBookCell(b, counts[b.id], coverMap[b.id])).join('')}</div>`
         : '<p class="muted" style="text-align:center;padding:30px 0">書架還空著</p>'}
       <div style="text-align:center;margin:30px 0">
         <a class="btn primary" href="/" style="text-decoration:none;display:inline-block">🌱 我也想記錄我讀的書</a>
@@ -3106,7 +3119,8 @@ async function renderPublicShelf(slug) {
   });
 }
 
-function publicBookCell(b, counts) {
+function publicBookCell(b, counts, signedCover) {
+  const coverSrc = b.cover_url || signedCover || '';
   const quote = b.quote_for_card
     ? `<div class="muted small" style="margin-top:2px">「${escapeHtml(b.quote_for_card)}」</div>` : '';
   const btns = Object.keys(REACTION_META).map(kind => {
@@ -3119,8 +3133,8 @@ function publicBookCell(b, counts) {
   }).join('');
   return `<div class="book-cell">
     <div class="book-cover">
-      ${b.cover_url
-        ? `<img src="${escapeHtml(b.cover_url)}" alt="${escapeHtml(b.title)}">`
+      ${coverSrc
+        ? `<img src="${escapeHtml(coverSrc)}" alt="${escapeHtml(b.title)}">`
         : '<div class="cover-placeholder">📕</div>'}
     </div>
     <div class="book-title">${escapeHtml(b.title)}</div>
