@@ -7,7 +7,7 @@ LINE 主題自動製作引擎
 
 工作資料夾內放「命名好的來源照片」，用數字代號：
     i22.jpg  → 生成 i_22.png（聊天背景，自動壓 <1MB）
-    i27.png  → 生成 i_27.png + i_27_g.png（灰階，透明底）
+    i27.png  → 生成 i_27.png + i_27_g.png（彩色小尺寸版，與正常版同設計）
     a20.jpg  → 生成 a_20.png
     store.jpg / main.jpg → 生成三種縮圖（store/ios/android）
 副檔名 jpg/jpeg/png/webp 皆可。未被替換的 slot 會從 template/ 補齊，湊滿整套。
@@ -48,13 +48,11 @@ def resize_cover(img, size):
     return img.crop((x, y, x+size[0], y+size[1]))
 
 
-def to_gray_rgba(img, size):
-    """灰階但保留 Alpha（避免透明底變黑塊），再 contain 置中。"""
-    img = img.convert("RGBA")
-    r, g, b, a = img.split()
-    lum = Image.merge("RGB", (r, g, b)).convert("L")
-    gray = Image.merge("RGBA", (lum, lum, lum, a))
-    return resize_contain(gray, size)
+def make_g_variant(img, size):
+    """產生 _g 版：與正常版同一張照片、保留原彩色，只縮到 _g 尺寸。
+    ⚠️ 千萬別轉灰階！LINE 會比對「同一顆按鈕」的正常版與 _g 版設計是否一致，
+    正常版彩色、_g 版灰階會被判定「設計差太多」而退件。"""
+    return resize_contain(img, size)
 
 
 def save_compressed(img, path, max_kb):
@@ -117,7 +115,7 @@ def build(workdir):
             else:
                 resize_contain(src, cfg["size"]).save(target, "PNG")
             if gray_target:
-                to_gray_rgba(src, cfg["gray"]).save(gray_target, "PNG")
+                make_g_variant(src, cfg["gray"]).save(gray_target, "PNG")
             replaced.append(slot)
         else:
             shutil.copy2(os.path.join(TEMPLATE, slot + ".png"), target)
