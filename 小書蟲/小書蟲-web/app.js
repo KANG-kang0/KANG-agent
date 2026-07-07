@@ -647,10 +647,11 @@ function milestoneCheer(n) {
 // ============================================================
 // Google Books
 // ============================================================
-async function searchGoogleBooks(query) {
+async function searchGoogleBooks(query, opts = {}) {
   const trimmed = (query || '').trim();
   if (!trimmed) return [];
-  const url = `${window.CONFIG.GOOGLE_BOOKS_API}?q=${encodeURIComponent(trimmed)}&maxResults=20&langRestrict=zh`;
+  let url = `${window.CONFIG.GOOGLE_BOOKS_API}?q=${encodeURIComponent(trimmed)}&maxResults=20`;
+  if (!opts.anyLang) url += '&langRestrict=zh';
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Google Books ${res.status}`);
   const data = await res.json();
@@ -772,21 +773,35 @@ async function ocrCover(blob) {
   }
 }
 
-// 辨識完封面後，背景查 Google Books 補作者與出版社
+// 辨識完封面後，背景查 Google Books 補作者與出版社。
+// 出版社常補不到的三個原因，各對應一招：
+// 1) API 匿名配額 429 → 單次失敗換下一招，不整包放棄
+// 2) OCR 作者欄常混入譯者/多人名 → 只取第一個人名查，查不到退回純書名
+// 3) 同book多版本、zh 過濾後的那筆常缺 publisher → 吻合結果裡優先挑有出版社的版本
 async function autoFillBookInfo(title, author) {
-  try {
-    const query = author ? `${title} ${author}` : title;
-    const results = await searchGoogleBooks(query);
-    if (!results.length) return {};
-    // 優先找標題吻合的
-    const best = results.find(r => r.title.includes(title) || title.includes(r.title)) || results[0];
+  const firstAuthor = (author || '').split(/[、,，/\s]+/)[0] || '';
+  const attempts = [];
+  if (firstAuthor) attempts.push({ q: `${title} ${firstAuthor}` });
+  attempts.push({ q: title });
+  attempts.push({ q: title, anyLang: true });
+
+  for (const a of attempts) {
+    let results;
+    try { results = await searchGoogleBooks(a.q, { anyLang: a.anyLang }); }
+    catch { continue; }
+    if (!results.length) continue;
+    const strip = s => (s || '').replace(/[\s:：—–-]+/g, '');
+    const t = strip(title);
+    const matches = results.filter(r => strip(r.title).includes(t) || t.includes(strip(r.title)));
+    const pool = matches.length ? matches : results;
+    const best = pool.find(r => r.publisher) || pool[0];
+    if (!best.publisher && !(best.authors || []).length) continue;
     return {
       author: best.authors && best.authors.length ? best.authors.join(', ') : '',
       publisher: best.publisher || '',
     };
-  } catch {
-    return {};
   }
+  return {};
 }
 
 // 整理筆記重點
