@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "xiaoshuchong-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "小書蟲/小書蟲-web", "-p", "8000", "-c-1", "--silent"],
+      "port": 8000
+    }
+  ]
+}

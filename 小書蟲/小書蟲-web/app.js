@@ -5,7 +5,7 @@
 // ============================================================
 const DB_NAME = '小書蟲';
 const DB_VERSION = 1;
-const APP_VERSION = '2026.06.16';  // 改版後更新這行，設定→關於 會顯示，方便確認手機載到新版
+const APP_VERSION = '2026.07.07';  // 改版後更新這行，設定→關於 會顯示，方便確認手機載到新版
 const CATEGORIES = ['商業', '小說', '心理', '自我成長', '傳記', '科學', '其他'];
 const NOTES_MAX = 7;
 const NOTE_FOR_CARD_MAX = 50;
@@ -2752,6 +2752,15 @@ function renderYearly() {
         </section>
       `) : ''}
 
+      ${currentUser ? `
+      <section class="settings-section">
+        <h3>🔗 公開書架連結</h3>
+        <p class="desc">開一個「永遠是最新內容」的公開網址，貼在 Threads 簡介或傳給朋友；朋友還能按「我也讀過／我想讀」。只公開書名、作者、封面、金句，不含 AI 摘要、讀書當下與筆記照片。</p>
+        <input type="text" id="shelf-slug" placeholder="取個網址暱稱（小寫英數 3〜30 字）" maxlength="30" autocomplete="off">
+        <button class="btn outline full" id="shelf-save-btn" style="margin-top:8px">儲存並開啟公開書架</button>
+        <div id="shelf-link" class="muted small" style="margin-top:8px"></div>
+      </section>` : ''}
+
       <section class="settings-section">
         <h3>🌐 公開書架網頁</h3>
         <p class="desc">把你的書架做成一個獨立網頁，下載 .html 檔丟到 Cloudflare Pages / Vercel / GitHub Pages 任何一個免費空間，分享網址給朋友。朋友不用裝任何 app 就能看你的書架（含心情、隨筆、金句、購書連結）。</p>
@@ -2794,6 +2803,11 @@ function attachYearlyListeners() {
       render();
     });
   });
+  const shelfSaveBtn = document.getElementById('shelf-save-btn');
+  if (shelfSaveBtn) {
+    shelfSaveBtn.addEventListener('click', saveMyShelf);
+    loadMyShelfSettings();
+  }
   document.getElementById('share-yearly').addEventListener('click', () => {
     state.showShareCard = true;
     state.shareTemplate = 'yearly';
@@ -3032,10 +3046,160 @@ async function renderSharePreview() {
 }
 
 // ============================================================
+// 公開書架（/u/暱稱）：訪客免登入唯讀頁
+// 資料只走 shelf_books view（安全欄位投影），私密欄位不會經過這裡
+// ============================================================
+const REACTION_META = {
+  read: { icon: '📖', label: '我也讀過' },
+  want: { icon: '💭', label: '我想讀' },
+};
+
+function publicShelfSlug() {
+  const m = location.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,29})$/)
+         || location.hash.match(/^#\/u\/([a-z0-9][a-z0-9_-]{2,29})$/);
+  return m ? m[1] : null;
+}
+
+async function renderPublicShelf(slug) {
+  const root = document.getElementById('app');
+  if (!sb) {
+    root.innerHTML = '<div style="padding:40px;text-align:center">這個書架暫時打不開（雲端尚未設定）</div>';
+    return;
+  }
+  root.innerHTML = '<div class="muted" style="padding:40px;text-align:center">書架載入中…</div>';
+
+  const { data: shelf } = await sb.from('public_shelves')
+    .select('user_id, slug, display_name')
+    .eq('slug', slug).eq('enabled', true).maybeSingle();
+  if (!shelf) {
+    root.innerHTML = `<div style="padding:40px;text-align:center">找不到這個書架 🕸️<br><br><a href="/">回小書蟲首頁</a></div>`;
+    return;
+  }
+
+  const [booksRes, reactRes] = await Promise.all([
+    sb.from('shelf_books').select('*')
+      .eq('user_id', shelf.user_id).order('date_added', { ascending: false }),
+    sb.from('shelf_reactions').select('book_id, kind').eq('shelf_user', shelf.user_id),
+  ]);
+  const books = booksRes.data || [];
+  const counts = {};
+  (reactRes.data || []).forEach(r => {
+    counts[r.book_id] = counts[r.book_id] || { read: 0, want: 0 };
+    counts[r.book_id][r.kind]++;
+  });
+
+  const name = shelf.display_name || shelf.slug;
+  root.innerHTML = `
+    ${renderHeader(`${name} 的書架`)}
+    <main class="bookshelf">
+      <p class="muted small" style="text-align:center;margin:10px 0">共 ${books.length} 本，用小書蟲記錄 🌱</p>
+      ${books.length
+        ? `<div class="bookshelf-grid">${books.map(b => publicBookCell(b, counts[b.id])).join('')}</div>`
+        : '<p class="muted" style="text-align:center;padding:30px 0">書架還空著</p>'}
+      <div style="text-align:center;margin:30px 0">
+        <a class="btn primary" href="/" style="text-decoration:none;display:inline-block">🌱 我也想記錄我讀的書</a>
+      </div>
+      <div class="spacer"></div>
+    </main>`;
+  root.querySelectorAll('.react-btn').forEach(btn => {
+    btn.addEventListener('click', () => reactToBook(btn, shelf.user_id));
+  });
+}
+
+function publicBookCell(b, counts) {
+  const quote = b.quote_for_card
+    ? `<div class="muted small" style="margin-top:2px">「${escapeHtml(b.quote_for_card)}」</div>` : '';
+  const btns = Object.keys(REACTION_META).map(kind => {
+    const done = localStorage.getItem(`reacted:${b.id}:${kind}`);
+    const n = (counts && counts[kind]) || 0;
+    const meta = REACTION_META[kind];
+    return `<button class="react-btn" data-book="${b.id}" data-kind="${kind}" ${done ? 'disabled' : ''}
+      style="font-size:11px;padding:2px 8px;border-radius:12px;border:1px solid var(--border, #ccc);background:${done ? '#eee' : '#fff'}">
+      ${meta.icon} ${meta.label}${done ? ' ✓' : ''}${n ? ` ${n}` : ''}</button>`;
+  }).join('');
+  return `<div class="book-cell">
+    <div class="book-cover">
+      ${b.cover_url
+        ? `<img src="${escapeHtml(b.cover_url)}" alt="${escapeHtml(b.title)}">`
+        : '<div class="cover-placeholder">📕</div>'}
+    </div>
+    <div class="book-title">${escapeHtml(b.title)}</div>
+    ${b.author ? `<div class="book-author">${escapeHtml(b.author)}</div>` : ''}
+    ${quote}
+    <div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">${btns}</div>
+  </div>`;
+}
+
+async function reactToBook(btn, shelfUser) {
+  const bookId = btn.dataset.book, kind = btn.dataset.kind;
+  const key = `reacted:${bookId}:${kind}`;
+  if (localStorage.getItem(key)) return;
+  btn.disabled = true;
+  const { error } = await sb.from('shelf_reactions')
+    .insert({ shelf_user: shelfUser, book_id: bookId, kind });
+  if (error) { btn.disabled = false; return; }
+  localStorage.setItem(key, '1');
+  const meta = REACTION_META[kind];
+  btn.textContent = `${meta.icon} ${meta.label} ✓`;
+}
+
+// ---------- 書架主人這端的設定 ----------
+async function loadMyShelfSettings() {
+  const { data } = await sb.from('public_shelves')
+    .select('slug, enabled').eq('user_id', currentUser.id).maybeSingle();
+  if (data) {
+    document.getElementById('shelf-slug').value = data.slug;
+    showShelfLink(data);
+  }
+}
+
+function showShelfLink(shelf) {
+  const div = document.getElementById('shelf-link');
+  if (!shelf || !shelf.enabled) { div.innerHTML = '目前未公開'; return; }
+  const url = `${location.origin}/u/${shelf.slug}`;
+  div.innerHTML = `你的書架網址（永遠是最新內容）：<br>
+    <a href="${url}" target="_blank">${url}</a><br>
+    <button class="btn outline" id="shelf-copy" style="padding:2px 10px;font-size:12px;margin-top:6px">複製網址</button>
+    <button class="btn outline" id="shelf-off" style="padding:2px 10px;font-size:12px;margin-top:6px">關閉公開</button>`;
+  document.getElementById('shelf-copy').addEventListener('click', async (e) => {
+    await navigator.clipboard.writeText(url);
+    e.target.textContent = '已複製 ✓';
+  });
+  document.getElementById('shelf-off').addEventListener('click', async () => {
+    await sb.from('public_shelves').update({ enabled: false }).eq('user_id', currentUser.id);
+    showShelfLink(null);
+  });
+}
+
+async function saveMyShelf() {
+  const slug = (document.getElementById('shelf-slug').value || '').trim().toLowerCase();
+  const div = document.getElementById('shelf-link');
+  if (!/^[a-z0-9][a-z0-9_-]{2,29}$/.test(slug)) {
+    div.textContent = '暱稱只能用小寫英文、數字、-、_，長度 3〜30 字';
+    return;
+  }
+  const { error } = await sb.from('public_shelves')
+    .upsert({ user_id: currentUser.id, slug, enabled: true });
+  if (error) {
+    div.textContent = error.code === '23505'
+      ? '這個暱稱已經有人用了，換一個吧'
+      : `儲存失敗：${error.message}（資料表可能還沒建立）`;
+    return;
+  }
+  showShelfLink({ slug, enabled: true });
+}
+
+// ============================================================
 // Init
 // ============================================================
 (async () => {
   try {
+    const pubSlug = publicShelfSlug();
+    if (pubSlug) {
+      initSupabase();
+      await renderPublicShelf(pubSlug);
+      return;
+    }
     await openDB();
     initSupabase();
     await initAuth();
