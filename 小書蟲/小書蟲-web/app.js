@@ -1501,196 +1501,6 @@ async function exportMarkdown() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// 匯出「公開書架網頁」— 自包含 HTML，朋友打開就能看
-async function exportPublicShelf() {
-  const books = (await getAllBooksDB()).map(withDefaults);
-  if (!books.length) {
-    alert('還沒有書可以分享，先加幾本再來');
-    return;
-  }
-
-  const inputTitle = prompt('書架的標題：', '我的小書架');
-  if (inputTitle === null) return;
-  const shelfTitle = (inputTitle.trim() || '我的小書架').substring(0, 40);
-
-  // 把封面壓小,避免 HTML 檔太大(每本約 15-25KB)
-  const bookData = await Promise.all(books.map(async b => {
-    let cover = null;
-    if (b.coverBlob instanceof Blob) {
-      try {
-        const resized = await resizeIfNeeded(b.coverBlob, 400, 0.7);
-        cover = await blobToDataURL(resized);
-      } catch {}
-    } else if (b.coverURL) {
-      cover = b.coverURL;
-    }
-    return {
-      title: b.title,
-      author: b.author || '',
-      publisher: b.publisher || '',
-      cover,
-      moodTags: (b.moodTags || []).map(t => {
-        const mt = MOOD_TAGS.find(m => m.name === t);
-        return mt ? mt.emoji + ' ' + t : t;
-      }),
-      recommendFor: b.recommendFor || '',
-      noteForCard: b.noteForCard || '',
-      quoteForCard: b.quoteForCard || '',
-      isMonthlyPick: !!b.isMonthlyPick,
-      isYearlyPick: !!b.isYearlyPick,
-      year: new Date(b.dateAdded).getFullYear(),
-      buyLinks: buyLinks(b.title),
-    };
-  }));
-
-  const years = [...new Set(bookData.map(b => b.year))].sort((a, b) => b - a);
-  const html = buildPublicShelfHTML(shelfTitle, bookData, years);
-
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = shelfTitle + '.html';
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function buildPublicShelfHTML(title, books, years) {
-  const dataJSON = JSON.stringify(books).replace(/</g, '\\u003c');
-  const yearBtns = '<button data-year="all" class="active">全部</button>' +
-    years.map(y => '<button data-year="' + y + '">' + y + '</button>').join('');
-
-  const CSS = `
-*{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#fdf8f2;--surface:#fff;--primary:#8b5a3c;--light:#f5e6d3;--soft:rgba(139,90,60,.1);--text:#2d1e10;--muted:#8b7355;--border:#e8dccb}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC",system-ui,sans-serif;min-height:100vh;line-height:1.5;-webkit-tap-highlight-color:transparent}
-button{font-family:inherit;cursor:pointer}
-.hero{text-align:center;padding:60px 20px 40px;background:linear-gradient(135deg,#f5e6d3,#c69e72);color:#3d2614}
-.hero h1{font-size:36px;margin-bottom:12px;font-weight:700}
-.hero-stat{font-size:17px;margin-bottom:4px}
-.hero-sub{font-size:13px;opacity:.65;margin-top:8px}
-main{max-width:900px;margin:0 auto;padding:24px 16px 60px}
-.year-filter{display:flex;gap:8px;overflow-x:auto;padding:0 0 20px;-webkit-overflow-scrolling:touch}
-.year-filter::-webkit-scrollbar{display:none}
-.year-filter button{flex-shrink:0;background:var(--soft);color:var(--text);border:none;padding:7px 18px;border-radius:20px;font-size:14px}
-.year-filter button.active{background:var(--primary);color:#fff;font-weight:500}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:24px}
-.book{cursor:pointer;transition:transform .15s}
-.book:hover{transform:translateY(-3px)}
-.book-cover{position:relative;aspect-ratio:2/3;border-radius:6px;overflow:hidden;background:var(--light);box-shadow:0 4px 12px rgba(0,0,0,.12)}
-.book-cover img{width:100%;height:100%;object-fit:cover;display:block}
-.book-placeholder{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:40px;color:var(--primary);opacity:.4}
-.book-badge{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.92);border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:15px}
-.book-title{font-size:14px;margin-top:10px;font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.book-author{font-size:12px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10;display:flex;align-items:center;justify-content:center;padding:16px}
-.modal{background:var(--bg);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;border-radius:16px;padding:24px;-webkit-overflow-scrolling:touch}
-.modal-close{float:right;background:var(--soft);border:none;width:34px;height:34px;border-radius:50%;font-size:20px;color:var(--primary);line-height:1}
-.modal-header{display:flex;gap:16px;margin-bottom:20px;clear:both;padding-top:8px}
-.modal-cover{width:110px;aspect-ratio:2/3;border-radius:6px;overflow:hidden;background:var(--light);flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-.modal-cover img{width:100%;height:100%;object-fit:cover}
-.modal-info{flex:1;min-width:0}
-.modal-info h2{font-size:20px;margin-bottom:6px;line-height:1.3;word-break:break-all}
-.modal-info .author{color:var(--muted);font-size:14px;margin-bottom:2px}
-.modal-info .publisher{color:var(--muted);font-size:12px}
-.modal-section{margin:16px 0}
-.modal-section .label{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:6px}
-.modal-section .body{font-size:14px;line-height:1.6;white-space:pre-wrap}
-.mood-row{display:flex;gap:6px;flex-wrap:wrap}
-.mood-pill{background:var(--soft);color:var(--text);padding:5px 12px;border-radius:14px;font-size:13px}
-.quote-box{border-left:3px solid var(--primary);padding:10px 14px;background:var(--soft);border-radius:0 8px 8px 0;font-style:italic;line-height:1.6}
-.buy-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.buy-row a{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px;text-align:center;text-decoration:none;color:var(--primary);font-size:14px;font-weight:500}
-footer{text-align:center;padding:32px 20px;color:var(--muted);font-size:13px;background:var(--surface);border-top:1px solid var(--border)}
-footer p{margin:4px 0}
-footer strong{color:var(--primary)}
-`;
-
-  // 內嵌 JS 用 string 串接，避免跟外層 template literal 衝突
-  const JS = `
-function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[c]})}
-function cell(b,i){
-  var bd=b.isYearlyPick?'👑':(b.isMonthlyPick?'⭐':'');
-  var im=b.cover?'<img src="'+esc(b.cover)+'" loading="lazy">':'<div class="book-placeholder">📕</div>';
-  var bg=bd?'<span class="book-badge">'+bd+'</span>':'';
-  var au=b.author?'<div class="book-author">'+esc(b.author)+'</div>':'';
-  return '<div class="book" data-i="'+i+'"><div class="book-cover">'+im+bg+'</div><div class="book-title">'+esc(b.title)+'</div>'+au+'</div>';
-}
-function renderGrid(y){
-  var g=document.getElementById('grid');
-  var f=y==='all'?BOOKS:BOOKS.filter(function(b){return b.year===parseInt(y)});
-  g.innerHTML=f.map(function(b){return cell(b,BOOKS.indexOf(b))}).join('');
-  document.querySelectorAll('.book').forEach(function(el){
-    el.addEventListener('click',function(){openBook(parseInt(el.dataset.i))});
-  });
-}
-function openBook(i){
-  var b=BOOKS[i];
-  var m=document.getElementById('modal');
-  var c=document.getElementById('modal-content');
-  var im=b.cover?'<img src="'+esc(b.cover)+'">':'<div class="book-placeholder">📕</div>';
-  var h='<button class="modal-close" onclick="closeModal()">×</button>';
-  h+='<div class="modal-header"><div class="modal-cover">'+im+'</div><div class="modal-info"><h2>'+esc(b.title)+'</h2>';
-  if(b.author)h+='<p class="author">'+esc(b.author)+'</p>';
-  if(b.publisher)h+='<p class="publisher">'+esc(b.publisher)+'</p>';
-  h+='</div></div>';
-  if(b.moodTags&&b.moodTags.length){
-    var mt=b.moodTags.map(function(t){return '<span class="mood-pill">'+esc(t)+'</span>'}).join('');
-    h+='<div class="modal-section"><div class="label">讀後心情</div><div class="mood-row">'+mt+'</div></div>';
-  }
-  if(b.recommendFor)h+='<div class="modal-section"><div class="label">想推薦給</div><div class="body">'+esc(b.recommendFor)+'</div></div>';
-  if(b.noteForCard)h+='<div class="modal-section"><div class="label">隨筆隨記</div><div class="body">'+esc(b.noteForCard)+'</div></div>';
-  if(b.quoteForCard)h+='<div class="modal-section"><div class="label">金句</div><div class="quote-box">'+esc(b.quoteForCard)+'</div></div>';
-  if(b.buyLinks&&b.buyLinks.length){
-    var bl=b.buyLinks.map(function(x){return '<a href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.name)+'</a>'}).join('');
-    h+='<div class="modal-section"><div class="label">📕 想看這本書？</div><div class="buy-row">'+bl+'</div></div>';
-  }
-  c.innerHTML=h;
-  m.style.display='flex';
-  document.body.style.overflow='hidden';
-}
-function closeModal(){
-  document.getElementById('modal').style.display='none';
-  document.body.style.overflow='';
-}
-document.getElementById('modal').addEventListener('click',function(e){if(e.target.id==='modal')closeModal()});
-document.querySelectorAll('.year-filter button').forEach(function(btn){
-  btn.addEventListener('click',function(){
-    document.querySelectorAll('.year-filter button').forEach(function(b){b.classList.remove('active')});
-    btn.classList.add('active');
-    renderGrid(btn.dataset.year);
-  });
-});
-renderGrid('all');
-`;
-
-  return '<!DOCTYPE html>\n<html lang="zh-Hant">\n<head>\n' +
-    '<meta charset="UTF-8">\n' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    '<title>' + escapeHtml(title) + '</title>\n' +
-    '<meta name="theme-color" content="#8b5a3c">\n' +
-    '<style>' + CSS + '</style>\n' +
-    '</head>\n<body>\n' +
-    '<header class="hero">\n' +
-      '<h1>📚 ' + escapeHtml(title) + '</h1>\n' +
-      '<p class="hero-stat">共 ' + books.length + ' 本書</p>\n' +
-      '<p class="hero-sub">— 由小書蟲製作 —</p>\n' +
-    '</header>\n' +
-    '<main>\n' +
-      '<div class="year-filter">' + yearBtns + '</div>\n' +
-      '<div class="grid" id="grid"></div>\n' +
-    '</main>\n' +
-    '<div class="modal-overlay" id="modal" style="display:none">\n' +
-      '<div class="modal" id="modal-content"></div>\n' +
-    '</div>\n' +
-    '<footer>\n' +
-      '<p>這個書架由 <strong>小書蟲</strong> 製作</p>\n' +
-      '<p>讀到喜歡的書，記得 📕 買一本支持作者</p>\n' +
-    '</footer>\n' +
-    '<script>\nconst BOOKS = ' + dataJSON + ';\n' + JS + '\n</' + 'script>\n' +
-    '</body>\n</html>';
-}
-
 async function importData(file) {
   const text = await file.text();
   const data = JSON.parse(text);
@@ -2411,12 +2221,6 @@ function renderDetail() {
     </section>
 
     <section>
-      <h3>讀書當下（私人筆記）</h3>
-      <p class="muted small" style="margin-bottom:8px">那時你在哪？正在經歷什麼？留給未來的自己回看</p>
-      <textarea id="d-context" rows="3" placeholder="例：2025 三月，正在猶豫要不要轉職的那段時間，每天捷運上讀一段…">${escapeHtml(b.readingContext)}</textarea>
-    </section>
-
-    <section>
       <div class="row between">
         <h3 style="margin:0">分類</h3>
         <select id="d-category" style="width:auto">
@@ -2524,11 +2328,6 @@ function attachDetailListeners() {
     debouncedSaveBook();
   });
 
-  // 讀書當下
-  document.getElementById('d-context').addEventListener('input', e => {
-    currentBook.readingContext = e.target.value;
-    debouncedSaveBook();
-  });
 
   document.getElementById('d-category').addEventListener('change', async e => {
     currentBook.category = e.target.value;
@@ -2762,13 +2561,6 @@ function renderYearly() {
       </section>` : ''}
 
       <section class="settings-section">
-        <h3>🌐 公開書架網頁</h3>
-        <p class="desc">把你的書架做成一個獨立網頁，下載 .html 檔丟到 Cloudflare Pages / Vercel / GitHub Pages 任何一個免費空間，分享網址給朋友。朋友不用裝任何 app 就能看你的書架（含心情、隨筆、金句、購書連結）。</p>
-        <button class="btn outline full" id="export-shelf-btn">🌐 產生公開書架網頁</button>
-        <p class="muted small" style="margin-top:6px">📌 公開內容不包含 AI 摘要、讀書當下、筆記照片(尊重作者智財 + 保護你個人隱私)</p>
-      </section>
-
-      <section class="settings-section">
         <h3>📝 匯出讀書筆記</h3>
         <p class="desc">輸出成 Markdown 文字檔，可在 Bear / Notion / Obsidian 打開，或印出收藏。</p>
         <button class="btn outline full" id="export-md-btn">📝 匯出 .md 讀書筆記</button>
@@ -2889,20 +2681,6 @@ function attachYearlyListeners() {
       }
     });
   }
-
-  document.getElementById('export-shelf-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('export-shelf-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>產生中…(封面要壓縮)';
-    try {
-      await exportPublicShelf();
-      toast('✅ 已下載 .html 檔');
-    } catch (e) {
-      alert(`產生失敗：${e.message}`);
-    }
-    btn.disabled = false;
-    btn.innerHTML = '🌐 產生公開書架網頁';
-  });
 
   document.getElementById('import-input').addEventListener('change', async e => {
     const file = e.target.files[0];
