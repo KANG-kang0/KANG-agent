@@ -11,6 +11,9 @@
     "ALLOWED_USER_IDS": "8931204151,8443045461",
     // /risk 風控掃描清單（第一階段固定清單；上限 15 檔，改完要重新 deploy）
     // 來源：撲滿 watchlist + positions，之後改讀零錢種子 Supabase（見 規劃-風控版面.md）
-    "WATCHLIST": "2330,2317,2454,2412,3044"
+    "WATCHLIST": "2330,2317,2454,2412,3044",
+    // 零錢種子 Supabase（anon key 可公開，RLS 保護）：/risk 優先讀那邊的 watchlist 表
+    "SEED_SUPABASE_URL": "https://iatyzimhborehpjpfoks.supabase.co",
+    "SEED_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlhdHl6aW1oYm9yZWhwanBmb2tzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzOTgyMjgsImV4cCI6MjA5NTk3NDIyOH0.O9c_lnqHfz6Ou-WIPDz1sCDKnoPOq6tcVoF0Tz5SkD8"
   }
 }

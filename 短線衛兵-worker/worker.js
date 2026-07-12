@@ -151,8 +151,26 @@ function classifyRisk(p, disposition) {
   return { zone: null, reasons: [] };
 }
 
+// 第二階段：優先讀零錢種子 Supabase 的 watchlist（每日盤後由撲滿同步），失敗退回固定清單
+async function fetchSeedWatchlist(env) {
+  if (!env.SEED_SUPABASE_URL || !env.SEED_SUPABASE_ANON_KEY) return null;
+  try {
+    const r = await fetch(`${env.SEED_SUPABASE_URL}/rest/v1/watchlist?select=symbol`, {
+      headers: { apikey: env.SEED_SUPABASE_ANON_KEY, Authorization: `Bearer ${env.SEED_SUPABASE_ANON_KEY}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    const syms = rows.map(x => x.symbol).filter(Boolean);
+    return syms.length ? syms : null;
+  } catch {
+    return null;
+  }
+}
+
 async function handleRisk(env, chatId) {
-  const list = (env.WATCHLIST || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 15);
+  const seed = await fetchSeedWatchlist(env);
+  const list = (seed || (env.WATCHLIST || "").split(",").map(s => s.trim()).filter(Boolean)).slice(0, 15);
   if (!list.length) {
     await sendMessage(env, chatId, "追蹤清單是空的，請管理員在 wrangler.jsonc 設定 WATCHLIST。");
     return;
